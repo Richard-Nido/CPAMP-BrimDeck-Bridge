@@ -1,0 +1,23 @@
+# Runtime secrets and private test states must never be published.
+**/state/
+tests/live-state/
+tests/output/
+tools/
+research/
+**/bin/
+**/obj/
+*.user
+*.suo
+*.sqlite*
+*.db
+*.pdb
+*.exe
+!dist/CPAMP-BrimDeck-Bridge.exe
+*.dll
+*.zip
+*.tar.gz
+# Dist keeps only release documentation and scripts in Git.
+dist/state/
+.vs/
+*.log
+verification-local/

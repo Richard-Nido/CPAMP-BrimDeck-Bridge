@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0-windows</TargetFramework><UseWindowsForms>true</UseWindowsForms><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><SelfContained>true</SelfContained><RuntimeIdentifier>win-x64</RuntimeIdentifier></PropertyGroup>
+  <ItemGroup><Reference Include="CPAMP-BrimDeck-Bridge"><HintPath>../../src/Bridge/bin/Release/net8.0-windows/win-x64/CPAMP-BrimDeck-Bridge.dll</HintPath></Reference><FrameworkReference Include="Microsoft.AspNetCore.App" /></ItemGroup>
+  <ItemGroup>
+    <Reference Include="BrimDeck.Core"><HintPath>$(BrimDeckInstall)/BrimDeck.Core.dll</HintPath></Reference>
+    <Reference Include="Jint"><HintPath>$(BrimDeckInstall)/Jint.dll</HintPath></Reference>
+    <Reference Include="Acornima"><HintPath>$(BrimDeckInstall)/Acornima.dll</HintPath></Reference>
+    <Reference Include="ZstdSharp"><HintPath>$(BrimDeckInstall)/ZstdSharp.dll</HintPath></Reference>
+  </ItemGroup>
+</Project>
