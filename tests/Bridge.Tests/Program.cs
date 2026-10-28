@@ -165,7 +165,8 @@ static class Test
                 Application.EnableVisualStyles();
                 var now=DateTimeOffset.UtcNow;
                 var editor=new AccountEditor {Id="fixture",Name="示例账号 A",Provider="codex",Status="active",Updated="10-28 12:00",Windows=[new("5h","5h · codex_main",35,65,now.AddHours(3),now,false,"known","active","fixture"),new("week","Week · codex_main",5,95,now.AddDays(6),now,false,"known","active","fixture")],WindowIds=["5h","week"]};
-                using var host=new Form {Width=1120,Height=520,BackColor=UiStyle.Canvas,Text="卡片布局测试 · 示例数据",Font=UiStyle.Body};
+                // Fixed-pixel fixture: the real MainForm handles DPI; this checks card geometry independently of runner font scaling.
+                using var host=new Form {AutoScaleMode=AutoScaleMode.None,Width=1120,Height=520,BackColor=UiStyle.Canvas,Text="卡片布局测试 · 示例数据",Font=UiStyle.Body};
                 using var card=new QuotaCard(editor) {Location=new Point(10,40),Width=525};host.Controls.Add(card);
                 host.Controls.Add(new Label {Text="布局测试 · 以下为合成示例数据",AutoSize=true,Location=new Point(15,10)});
                 card.EditForTest(true,"工作账号",3);card.WindowForTest("week").IsSelected=false;
