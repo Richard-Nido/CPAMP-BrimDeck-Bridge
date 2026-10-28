@@ -1,5 +1,5 @@
 // 来源名称：CPA 用量统计。站点地址填写桥接地址，密钥填写独立桥接密钥。
-// 此来源的折叠环表示请求成功率，不能解释为账号额度。费用是 CPAMP 已知费用估算。
+// 此来源的折叠环表示请求成功率。数值来自 CPAMP。
 async function fetchUsage(ctx) {
     if (!ctx.site || !ctx.secrets || !ctx.secrets.key) throw new Error("请填写桥接地址和桥接密钥");
     const response = await ctx.http.get(ctx.site.replace(/\/+$/, "") + "/v1/stats", {
@@ -27,17 +27,18 @@ async function fetchUsage(ctx) {
     const total = number(a.totalRequests), success = number(a.successRequests), failed = number(a.failedRequests);
     if (total !== success + failed) throw new Error("请求分类与总数不一致");
     const cache = data.stale ? "过期缓存 · " : "";
-    const updated = data.updatedAt.replace("T", " ").substring(0, 19) + " UTC";
+    const updated = new Date(data.updatedAt);
+    const updateText = isNaN(updated.getTime()) ? "" : ("0" + updated.getHours()).slice(-2) + ":" + ("0" + updated.getMinutes()).slice(-2);
     const rows = [
         { title: "今日 Token", value: tokens(a.totalTokens), note: cache + data.timezone },
         { title: "7天 Token", value: tokens(b.totalTokens), note: cache + (data.sevenDayMode === "rolling" ? "滚动168小时" : "含今天7个自然日") },
-        { title: "今日已知费用", value: cost(a), suffix: "估算", note: cache + "完整性未确认" },
-        { title: "7天已知费用", value: cost(b), suffix: "估算", note: cache + "完整性未确认" },
+        { title: "今日费用", value: cost(a), note: cache },
+        { title: "7天费用", value: cost(b), note: cache },
         { title: "今日请求", value: String(total), note: cache },
         { title: "今日成功", value: String(success), note: cache },
         { title: "今日失败", value: String(failed), note: cache }
     ];
-    const rate = { title: "请求成功率", value: "N/A", note: cache + "请求统计，非账号额度", resetAt: "更新 " + updated };
+    const rate = { title: "请求成功率", value: "N/A", note: cache, resetAt: updateText ? "更新 " + updateText : "" };
     if (total > 0) {
         const percent = number(a.successRate);
         if (percent > 100 || Math.abs(percent - success / total * 100) > 0.001) throw new Error("成功率无效");

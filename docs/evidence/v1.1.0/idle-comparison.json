@@ -1,0 +1,22 @@
+{
+  "mode": "headless loopback server, real CPAMP, 10s warmup, 25s idle",
+  "measuredAt": "2026-10-28T09:51:29.1101698+00:00",
+  "results": [
+    {
+      "version": "v1.0.0",
+      "seconds": 25.026,
+      "cpuMs": 46.875,
+      "singleCoreCpuPercent": 0.1873,
+      "workingSetMiB": 138.39,
+      "privateMiB": 64.21
+    },
+    {
+      "version": "v1.1.0",
+      "seconds": 25.026,
+      "cpuMs": 15.625,
+      "singleCoreCpuPercent": 0.0624,
+      "workingSetMiB": 137.38,
+      "privateMiB": 63.47
+    }
+  ]
+}

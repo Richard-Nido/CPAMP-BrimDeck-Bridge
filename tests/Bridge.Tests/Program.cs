@@ -79,6 +79,7 @@ static class Test
         cfg.CpampUrl="http://192.168.1.2:18317"; Throws("remote CPAMP configuration rejected",cfg.Validate); cfg.CpampUrl="http://127.0.0.1:18317";
         await Sqlite(python);
         await ServerTests();
+        CardTests();
     }
     static async Task Sqlite(string python)
     {
@@ -134,6 +135,11 @@ static class Test
         Check("empty selection API empty accounts",E(await http.GetStringAsync("/v1/quotas")).Get("accounts").GetArrayLength()==0);
         Check("unselected account endpoint 404",(await http.GetAsync("/v1/quotas/unknown")).StatusCode==HttpStatusCode.NotFound);
         int before=requests;await Task.WhenAll(Enumerable.Range(0,15).Select(_=>http.GetStringAsync("/v1/stats")));Check("concurrent clients share cached stats",before==requests);
+        await Task.Delay(250);long wakes=runtime.BackgroundWakeups;await Task.Delay(2200);Check("background scheduler does not poll every second",runtime.BackgroundWakeups==wakes);
+        Check("background delay follows next refresh deadline",runtime.NextRefreshDelay(DateTimeOffset.UtcNow)>TimeSpan.FromSeconds(10));
+        Check("fresh statistics reuse snapshot instance",ReferenceEquals(runtime.Statistics,runtime.Statistics));
+        Check("fresh quotas reuse snapshot instance",ReferenceEquals(runtime.Inventory,runtime.Inventory));
+        Check("HTTP JSON compact",!text.Contains("\n  "));
         fail=500;await runtime.Refresh(true);Check("source 500 retains stale snapshot",runtime.Statistics is {Stale:true}&&runtime.Statistics.Today.TotalTokens==123456);
         fail=401;await runtime.Refresh(true);Check("source 401 explicit error",runtime.StatisticsError.Contains("401"));
         fail=0;await runtime.Refresh(true);Check("source reconnect clears stale",runtime.Statistics is {Stale:false});
@@ -141,8 +147,41 @@ static class Test
         var c=JsonSerializer.Deserialize<BridgeConfig>(JsonSerializer.Serialize(cfg,Bridge.Json.Options),Bridge.Json.Options)!;c.Accounts=[new(){Id=runtime.Inventory!.Accounts[0].Id,Selected=true,Alias="测试账号",Windows=[runtime.Inventory.Accounts[0].Windows[0].Id]}];await runtime.UpdateConfig(c);
         var quota=E(await http.GetStringAsync("/v1/quotas"));Check("selected quota alias through HTTP",quota.Get("accounts")[0].Get("name").Str()=="测试账号");
         string safe=c.Accounts[0].Id;Check("single selected account route",(await http.GetAsync("/v1/quotas/"+safe)).StatusCode==HttpStatusCode.OK);
+        var rotated=JsonSerializer.Deserialize<BridgeConfig>(JsonSerializer.Serialize(c,Bridge.Json.Options),Bridge.Json.Options)!;
+        rotated.ProtectedBridgeKey=SecretStore.Protect("rotated-bridge");await runtime.UpdateConfig(rotated);
+        Check("cached authentication old key rejected after rotation",(await http.GetAsync("/health")).StatusCode==HttpStatusCode.Unauthorized);
+        http.DefaultRequestHeaders.Authorization=new("Bearer","rotated-bridge");Check("cached authentication new key accepted",(await http.GetAsync("/health")).StatusCode==HttpStatusCode.OK);
         Check("listener only loopback",System.Net.NetworkInformation.IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners().Where(a=>a.Port==bridgePort).All(a=>IPAddress.IsLoopback(a.Address)));
         await runtime.DisposeAsync(); // explicit close tested before scope disposal below; guard expected in runtime.
         try {await http.GetAsync("/health");Check("exit closes HTTP",false);}catch(HttpRequestException){Check("exit closes HTTP",true);}
+    }
+    static void CardTests()
+    {
+        Exception? error=null;
+        var thread=new Thread(()=>
+        {
+            try
+            {
+                Application.EnableVisualStyles();
+                var now=DateTimeOffset.UtcNow;
+                var editor=new AccountEditor {Id="fixture",Name="示例账号 A",Provider="codex",Status="active",Updated="10-28 12:00",Windows=[new("5h","5h · codex_main",35,65,now.AddHours(3),now,false,"known","active","fixture"),new("week","Week · codex_main",5,95,now.AddDays(6),now,false,"known","active","fixture")],WindowIds=["5h","week"]};
+                using var host=new Form {Width=1120,Height=520,BackColor=UiStyle.Canvas,Text="卡片布局测试 · 示例数据",Font=UiStyle.Body};
+                using var card=new QuotaCard(editor) {Location=new Point(10,40),Width=525};host.Controls.Add(card);
+                host.Controls.Add(new Label {Text="布局测试 · 以下为合成示例数据",AutoSize=true,Location=new Point(15,10)});
+                card.EditForTest(true,"工作账号",3);card.WindowForTest("week").IsSelected=false;
+                Check("card edits selection alias order and windows",editor.Selected&&editor.Alias=="工作账号"&&editor.Order==3&&editor.WindowIds.SequenceEqual(["5h"]));
+                editor.Windows=editor.Windows.Select(w=>w with {UsedPercent=50,RemainingPercent=50}).ToList();card.UpdateData(now);
+                Check("card refresh preserves unsaved edits",editor.Selected&&editor.Alias=="工作账号"&&editor.Order==3&&!card.WindowForTest("week").IsSelected);
+                var second=new AccountEditor {Id="fixture-b",Name="示例账号 B",Provider="codex",Status="active",Updated="10-28 12:00",Windows=[new("5h","5h · codex_main",3,97,now.AddHours(2),now,false,"known","active","fixture"),new("week","Week · codex_main",0,100,now.AddDays(6),now,false,"known","active","fixture")],WindowIds=["5h","week"]};
+                using var card2=new QuotaCard(second) {Location=new Point(550,40),Width=525};host.Controls.Add(card2);
+                host.ShowInTaskbar=false;host.StartPosition=FormStartPosition.Manual;host.Location=new Point(-20000,-20000);host.Show();Application.DoEvents();host.PerformLayout();
+                Check("cards fit two-column layout",card.Right<card2.Left&&card2.Right<host.ClientSize.Width&&card.Bottom<host.ClientSize.Height);
+                Check("friendly quota windows",UiStyle.WindowName("Week · codex_main")=="周限额");
+                Check("relative reset labels",UiStyle.ResetText(now.AddHours(3),now)=="3 小时后"&&UiStyle.ResetText(now.AddDays(6),now)=="6 天后");
+                using var metric=new MetricTile("今日Token"){Width=260,Height=110};metric.PerformLayout();Check("metric value uses card width",metric.ValueWidth==228);
+                using var bitmap=new Bitmap(host.Width,host.Height);host.DrawToBitmap(bitmap,new Rectangle(Point.Empty,host.Size));bitmap.Save(Path.Combine(Root,"tests/output/cards-fixture.png"));
+            }
+            catch(Exception ex){error=ex;}
+        });thread.SetApartmentState(ApartmentState.STA);thread.Start();thread.Join();if(error is not null)throw error;
     }
 }

@@ -1,0 +1,134 @@
+{
+  "passed": true,
+  "count": 32,
+  "results": [
+    {
+      "name": "statistics 8 rows Chinese format only success percent",
+      "passed": true
+    },
+    {
+      "name": "zero requests N/A no fake100",
+      "passed": true
+    },
+    {
+      "name": "missing prices not fake zero",
+      "passed": true
+    },
+    {
+      "name": "snapshot used35 remaining65",
+      "passed": true
+    },
+    {
+      "name": "quota boundary 0",
+      "passed": true
+    },
+    {
+      "name": "quota boundary 100",
+      "passed": true
+    },
+    {
+      "name": "partial multiple accounts windows preserved",
+      "passed": true
+    },
+    {
+      "name": "quota never returns success rate",
+      "passed": true
+    },
+    {
+      "name": "blank selection nonempty text no fabricated percentage",
+      "passed": true
+    },
+    {
+      "name": "unknown account quota no fabricated number",
+      "passed": true
+    },
+    {
+      "name": "stale data explicitly labelled",
+      "passed": true
+    },
+    {
+      "name": "disabled credential explicitly labelled",
+      "passed": true
+    },
+    {
+      "name": "invalid percent reported without ring",
+      "passed": true
+    },
+    {
+      "name": "stats HTTP401 reject",
+      "passed": true
+    },
+    {
+      "name": "stats HTTP500 reject",
+      "passed": true
+    },
+    {
+      "name": "stats disconnected/timeout reject",
+      "passed": true
+    },
+    {
+      "name": "stats missing fields reject",
+      "passed": true
+    },
+    {
+      "name": "quota HTTP401 reject",
+      "passed": true
+    },
+    {
+      "name": "quota HTTP500 reject",
+      "passed": true
+    },
+    {
+      "name": "quota disconnected/timeout reject",
+      "passed": true
+    },
+    {
+      "name": "quota missing fields reject",
+      "passed": true
+    },
+    {
+      "name": "account HTTP401 reject",
+      "passed": true
+    },
+    {
+      "name": "account HTTP500 reject",
+      "passed": true
+    },
+    {
+      "name": "account disconnected/timeout reject",
+      "passed": true
+    },
+    {
+      "name": "account missing fields reject",
+      "passed": true
+    },
+    {
+      "name": "independent account safe ID works",
+      "passed": true
+    },
+    {
+      "name": "unexpanded account template rejects",
+      "passed": true
+    },
+    {
+      "name": "invalid raw quota rejects no silent clamp",
+      "passed": true
+    },
+    {
+      "name": "statistics show direct cost without defensive wording",
+      "passed": true
+    },
+    {
+      "name": "quota names and reset countdown concise",
+      "passed": true
+    },
+    {
+      "name": "expired reset waits without fabricating reset quota",
+      "passed": true
+    },
+    {
+      "name": "independent source rejects multiple accounts",
+      "passed": true
+    }
+  ]
+}

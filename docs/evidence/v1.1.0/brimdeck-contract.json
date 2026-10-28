@@ -1,0 +1,79 @@
+{
+  "passed": true,
+  "count": 18,
+  "failures": 0,
+  "results": [
+    {
+      "name": "installed ConfiguredProviders Jint parser statistics eight rows",
+      "passed": true
+    },
+    {
+      "name": "installed parser percent only success rate",
+      "passed": true
+    },
+    {
+      "name": "installed native401 keeps stale previous",
+      "passed": true
+    },
+    {
+      "name": "installed native500 error",
+      "passed": true
+    },
+    {
+      "name": "installed disconnected failure",
+      "passed": true
+    },
+    {
+      "name": "installed missing fields failure",
+      "passed": true
+    },
+    {
+      "name": "installed reconnect success",
+      "passed": true
+    },
+    {
+      "name": "installed quota used35 used72 retained",
+      "passed": true
+    },
+    {
+      "name": "installed quota source success not mixed",
+      "passed": true
+    },
+    {
+      "name": "installed empty selection nonempty text",
+      "passed": true
+    },
+    {
+      "name": "installed generated independent script",
+      "passed": true
+    },
+    {
+      "name": "installed native maximum application columns seven",
+      "passed": true
+    },
+    {
+      "name": "real CPAMP two Codex accounts have5h/weekly snapshots",
+      "passed": true
+    },
+    {
+      "name": "published EXE real subset selection2 of14",
+      "passed": true
+    },
+    {
+      "name": "published EXE\u2192installed Jint\u2192native quota parser real values",
+      "passed": true
+    },
+    {
+      "name": "published EXE\u2192installed statistics script test connection",
+      "passed": true
+    },
+    {
+      "name": "published EXE independent real selected account source",
+      "passed": true
+    },
+    {
+      "name": "published EXE graceful headless shutdown",
+      "passed": true
+    }
+  ]
+}

@@ -16,6 +16,8 @@ dotnet publish src/Bridge/Bridge.csproj -c Release -r win-x64 --self-contained t
 
 主程序没有第三方 NuGet PackageReference。使用 Windows 自带的 winsqlite3，通过 `sqlite3_open_v2(SQLITE_OPEN_READONLY|SQLITE_OPEN_FULLMUTEX)`、query_only、1500ms busy timeout 和绑定参数读取。正常统计优先 CPAMP API；SQLite 仅作为无管理密钥时的明确降级。
 
+v1.1.0 通过下一次到期时间调度后台读取，数据改变通知可见窗口；托盘隐藏状态不运行 UI 定时刷新。有效快照和 HttpClient 复用，保存设置后重建连接。API 金额元信息保持兼容，展示文案独立于数据契约。
+
 Self-contained / single-file / compressed，捆绑 .NET WinForms 和 ASP.NET Core 运行时。Release 中保留 .NET 第三方通知；不要从发布 EXE 中删减运行时 DLL。首次双击可能需要解包 .NET 自身原生运行库至 Windows 临时目录，这是运行时正常行为。
 
 ## 自动测试
@@ -28,6 +30,8 @@ node tests/scripts.test.mjs
 ```
 
 SQLite 测试只在 `tests/output` 生成可丢弃数据库，不对 CPAMP 做锁定 / 写入试验。测试涵盖 WAL 中的未 checkpoint 写入、并发 writer、只读写入拒绝、DELETE journal 临时排他锁、归档缺失、缺失状态、重复 request_id / 重试、日期边界、DST、decimal、安全、缓存、HTTP 生命周期和脚本契约。
+
+本版增加卡片控件交互、未保存编辑保留、长数值宽度、调度空闲等待、快照复用和认证密钥轮换。`tests/measure-idle.ps1` 可在相同 CPAMP 环境比较两个 EXE 的空闲 CPU / 内存，只写 tests/output。模板图片含私人账号，Template/ 不进入 Git。
 
 ## 可选：本机 BrimDeck 原引擎测试
 

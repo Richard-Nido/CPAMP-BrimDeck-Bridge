@@ -16,7 +16,7 @@ public sealed class CpampClient : IDisposable
     {
         this.config = config;
         config.Validate();
-        http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, UseProxy = false })
+        http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, UseProxy = false, MaxConnectionsPerServer = 4 })
         { BaseAddress = new Uri(config.CpampUrl), Timeout = TimeSpan.FromSeconds(8), MaxResponseContentBufferSize = 8_000_000 };
         var key = SecretStore.Read(config.ProtectedAdminKey);
         if (key.Length > 0) http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", key);

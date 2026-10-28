@@ -6,6 +6,7 @@ namespace Bridge;
 public static class Json
 {
     public static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web) { WriteIndented = true };
+    public static readonly JsonSerializerOptions HttpOptions = new(JsonSerializerDefaults.Web);
     public static JsonElement Get(this JsonElement e, string key) => e.ValueKind == JsonValueKind.Object && e.TryGetProperty(key, out var v) ? v : default;
     public static string Str(this JsonElement e) => e.ValueKind == JsonValueKind.String ? e.GetString()!.Trim() : e.ValueKind == JsonValueKind.Number ? e.GetRawText() : "";
     public static long Long(this JsonElement e) => e.TryGetInt64(out var n) ? n : throw new InvalidDataException("CPAMP 统计字段缺失或无效");

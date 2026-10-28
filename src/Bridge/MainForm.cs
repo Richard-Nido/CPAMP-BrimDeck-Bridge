@@ -39,13 +39,14 @@ public sealed class MainForm : Form
     private readonly BridgeRuntime runtime;
     private readonly ConfigStore store;
     private readonly NotifyIcon tray;
-    private readonly System.Windows.Forms.Timer timer = new() { Interval = 1000 };
-    private readonly TabControl tabs = new() { Dock = DockStyle.Fill };
-    private readonly Label status = new() { AutoSize = true, MaximumSize = new Size(960, 0), Padding = new Padding(12) };
-    private readonly Label summary = new() { AutoSize = true, MaximumSize = new Size(960, 0), Padding = new Padding(12), Font = new Font("Microsoft YaHei UI", 13) };
-    private readonly DataGridView grid = new() { Dock = DockStyle.Fill, AutoGenerateColumns = false, AllowUserToAddRows = false, AllowUserToDeleteRows = false, MultiSelect = false, SelectionMode = DataGridViewSelectionMode.FullRowSelect, RowHeadersVisible = false, BackgroundColor = Color.White, BorderStyle = BorderStyle.None, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill };
-    private readonly CheckedListBox windows = new() { Dock = DockStyle.Fill, CheckOnClick = true, IntegralHeight = false };
-    private readonly Label windowInfo = new() { AutoSize = true, MaximumSize = new Size(900, 0) };
+    private readonly System.Windows.Forms.Timer timer = new() { Interval = 60_000 };
+    private readonly TabControl tabs = new() { Dock = DockStyle.Fill, DrawMode = TabDrawMode.OwnerDrawFixed, ItemSize = new Size(160, 38), SizeMode = TabSizeMode.Fixed };
+    private readonly Label status = new() { AutoSize = true, MaximumSize = new Size(1060, 0), Padding = new Padding(16), ForeColor = UiStyle.Muted };
+    private readonly Label summary = new() { AutoSize = true, MaximumSize = new Size(1060, 0), Padding = new Padding(16), Font = UiStyle.Body, ForeColor = UiStyle.Muted };
+    private readonly FlowLayoutPanel cardsPanel = new() { Dock = DockStyle.Fill, AutoScroll = true, WrapContents = true, Padding = new Padding(0), BackColor = UiStyle.Canvas };
+    private readonly Dictionary<string, QuotaCard> cards = [];
+    private readonly Dictionary<string, MetricTile> metrics = [];
+    private readonly Label accountHint = new() { AutoSize = true, ForeColor = UiStyle.Muted, Padding = new Padding(8) };
     private readonly TextBox search = new() { Width = 240, PlaceholderText = "搜索账号或别名" };
     private readonly ComboBox providers = new() { Width = 150, DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly TextBox dataDir = new(), database = new(), cpamp = new(), adminKey = new() { UseSystemPasswordChar = true };
@@ -56,14 +57,15 @@ public sealed class MainForm : Form
     private readonly Label bridgeAddress = new() { AutoSize = true };
     private readonly Dictionary<string, AccountEditor> editors = [];
     private DateTimeOffset loadedInventory;
-    private bool loadingWindows, exiting, saving;
-    private AccountEditor? activeEditor;
+    private bool exiting, saving, filtering, dirty;
+    private int renderQueued;
     private readonly bool startHidden;
     public MainForm(BridgeRuntime runtime, ConfigStore store, bool startHidden)
     {
         this.runtime = runtime; this.store = store; this.startHidden = startHidden;
-        Text = "CPAMP–BrimDeck Bridge"; Font = new Font("Microsoft YaHei UI", 10); Size = new Size(1120, 780); MinimumSize = new Size(940, 650); StartPosition = FormStartPosition.CenterScreen;
-        AutoScaleMode = AutoScaleMode.Dpi; BackColor = Color.FromArgb(246, 248, 251); Icon = SystemIcons.Application;
+        Text = "CPAMP–BrimDeck Bridge"; Font = UiStyle.Body; ForeColor = UiStyle.Ink; Size = new Size(1180, 820); MinimumSize = new Size(980, 690); StartPosition = FormStartPosition.CenterScreen;
+        AutoScaleMode = AutoScaleMode.Dpi; BackColor = UiStyle.Canvas; Icon = SystemIcons.Application;
+        tabs.DrawItem += (_, e) => { var area = e.Bounds; bool active = e.Index == tabs.SelectedIndex; using var fill = new SolidBrush(active ? Color.White : UiStyle.Canvas); e.Graphics.FillRectangle(fill, area); TextRenderer.DrawText(e.Graphics, tabs.TabPages[e.Index].Text, UiStyle.Strong, area, active ? UiStyle.Accent : UiStyle.Muted, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter); if (active) { using var pen = new Pen(UiStyle.Accent, 3); e.Graphics.DrawLine(pen, area.Left + 20, area.Bottom - 2, area.Right - 20, area.Bottom - 2); } };
         Controls.Add(tabs);
         BuildHome(); BuildAccounts(); BuildSettings(); BuildIntegration();
         var menu = new ContextMenuStrip(); menu.Items.Add("打开设置", null, (_, _) => Restore());
@@ -72,79 +74,97 @@ public sealed class MainForm : Form
         tray.DoubleClick += (_, _) => Restore();
         Resize += (_, _) => { if (WindowState == FormWindowState.Minimized) Hide(); };
         FormClosing += (_, e) => { if (!exiting && e.CloseReason is not (CloseReason.WindowsShutDown or CloseReason.TaskManagerClosing)) { e.Cancel = true; Hide(); tray.ShowBalloonTip(2000, Text, "程序继续在托盘运行；彻底停止请右键托盘图标选择退出。", ToolTipIcon.Info); } };
-        FormClosed += (_, _) => { timer.Stop(); tray.Visible = false; tray.Dispose(); };
+        FormClosed += (_, _) => { runtime.StateChanged -= RuntimeChanged; timer.Stop(); timer.Dispose(); tray.Visible = false; tray.Dispose(); };
         timer.Tick += (_, _) => RenderState();
-        Shown += async (_, _) => { if (startHidden) Hide(); await runtime.Start(); timer.Start(); RenderState(); };
+        runtime.StateChanged += RuntimeChanged;
+        VisibleChanged += (_, _) => { if (Visible && !exiting) { timer.Start(); RenderState(); } else timer.Stop(); };
+        tabs.SelectedIndexChanged += (_, _) => { if (tabs.SelectedIndex == 1) FilterAccounts(); RenderState(); };
+        Shown += async (_, _) => { if (startHidden) Hide(); await runtime.Start(); if (Visible) timer.Start(); RenderState(); };
     }
     private TabPage Page(string name) { var p = new TabPage(name) { Padding = new Padding(14), BackColor = BackColor, AutoScroll = true }; tabs.TabPages.Add(p); return p; }
     private static Button Button(string text, EventHandler action)
     {
-        var b = new Button { Text = text, AutoSize = true, Padding = new Padding(10, 6, 10, 6), Margin = new Padding(5), FlatStyle = FlatStyle.System }; b.Click += action; return b;
+        bool primary = text.StartsWith("保存") || text.StartsWith("立即刷新");
+        var b = new Button { Text = text, AutoSize = true, Padding = new Padding(12, 7, 12, 7), Margin = new Padding(5), FlatStyle = FlatStyle.Flat, BackColor = primary ? UiStyle.Accent : Color.White, ForeColor = primary ? Color.White : UiStyle.Ink, Cursor = Cursors.Hand }; b.FlatAppearance.BorderColor = primary ? UiStyle.Accent : UiStyle.Line; b.Click += action; return b;
     }
     private static FlowLayoutPanel Flow() => new() { Dock = DockStyle.Top, AutoSize = true, WrapContents = true, Padding = new Padding(4) };
     private void BuildHome()
     {
-        var p = Page("运行状态"); var panel = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true };
-        panel.Controls.Add(new Label { Text = "CPAMP–BrimDeck Bridge", Font = new Font(Font.FontFamily, 21, FontStyle.Bold), AutoSize = true, Padding = new Padding(10) });
-        panel.Controls.Add(status); panel.Controls.Add(summary);
+        var p = Page("运行状态"); var panel = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 1, Padding = new Padding(6) };
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        panel.Controls.Add(new Label { Text = "用量概览", Font = UiStyle.Title, AutoSize = true, Padding = new Padding(12, 14, 12, 4) });
+        panel.Controls.Add(status);
+        var tiles = new TableLayoutPanel { Dock = DockStyle.Top, Height = 252, ColumnCount = 4, RowCount = 2, Margin = new Padding(6) };
+        for (int i = 0; i < 4; i++) tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
+        for (int i = 0; i < 2; i++) tiles.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        string[] titles = ["今日 Token", "7天 Token", "今日费用", "7天费用", "今日请求", "成功请求", "失败请求", "成功率"];
+        for (int i = 0; i < titles.Length; i++) { var tile = new MetricTile(titles[i]); tile.Set("—"); metrics.Add(titles[i], tile); tiles.Controls.Add(tile, i % 4, i / 4); }
+        panel.Controls.Add(tiles); panel.Controls.Add(summary);
         var actions = Flow(); actions.Controls.Add(Button("立即刷新 / 测试数据源", async (_, _) => await RefreshNow())); actions.Controls.Add(Button("最小化到托盘", (_, _) => Hide()));
         panel.Controls.Add(actions);
-        panel.Controls.Add(new Label { Text = "费用属于 CPAMP 已知费用估算，价格完整性未确认。额度来自已有快照。\n关闭窗口会继续托盘运行，彻底停止请在托盘菜单选择“退出”。", AutoSize = true, Padding = new Padding(12), ForeColor = Color.DimGray });
+        panel.Controls.Add(new Label { Text = "关闭窗口后继续在托盘运行。右键托盘图标可退出。", AutoSize = true, Padding = new Padding(16), ForeColor = UiStyle.Muted });
         p.Controls.Add(panel);
     }
     private void BuildAccounts()
     {
         var p = Page("账号管理");
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4 };
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize)); layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 135)); layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3 };
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize)); layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         var filter = Flow(); providers.Items.Add("全部 Provider"); providers.SelectedIndex = 0;
-        filter.Controls.Add(search); filter.Controls.Add(providers); filter.Controls.Add(new Label { Text = "勾选展示 · 别名和顺序可编辑 · 选中行后选择下方窗口", AutoSize = true, Padding = new Padding(6) });
-        search.TextChanged += (_, _) => FilterAccounts(); providers.SelectedIndexChanged += (_, _) => FilterAccounts();
-        void Column(string name, string title, bool readOnly, int weight) => grid.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = name, HeaderText = title, ReadOnly = readOnly, FillWeight = weight, SortMode = DataGridViewColumnSortMode.NotSortable });
-        grid.Columns.Add(new DataGridViewCheckBoxColumn { DataPropertyName = "Selected", HeaderText = "展示", FillWeight = 35 });
-        Column("Name", "发现的账号", true, 140); Column("Alias", "显示别名", false, 90); Column("Provider", "Provider", true, 70); Column("Order", "顺序", false, 40); Column("Preview", "额度预览", true, 150); Column("Status", "凭证状态", true, 70); Column("Updated", "快照更新", true, 100);
-        grid.CurrentCellDirtyStateChanged += (_, _) => { if (grid.IsCurrentCellDirty) grid.CommitEdit(DataGridViewDataErrorContexts.Commit); };
-        grid.DataError += (_, e) => { e.ThrowException = false; MessageBox.Show(this, "显示顺序必须为整数", Text); };
-        grid.SelectionChanged += (_, _) => SelectWindows();
-        var windowPanel = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1 };
-        windowPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize)); windowPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        windowPanel.Controls.Add(windowInfo, 0, 0); windowPanel.Controls.Add(windows, 0, 1);
-        windows.ItemCheck += (_, e) =>
-        {
-            if (loadingWindows || activeEditor is null) return;
-            var id = activeEditor.Windows[e.Index].Id;
-            if (e.NewValue == CheckState.Checked && !activeEditor.WindowIds.Contains(id)) activeEditor.WindowIds.Add(id);
-            if (e.NewValue != CheckState.Checked) activeEditor.WindowIds.Remove(id);
-        };
-        var actions = Flow(); actions.Controls.Add(Button("保存账号选择", async (_, _) => await SaveChoices())); actions.Controls.Add(Button("重新读取账号和快照", async (_, _) => await RefreshNow()));
-        layout.Controls.Add(filter, 0, 0); layout.Controls.Add(grid, 0, 1); layout.Controls.Add(windowPanel, 0, 2); layout.Controls.Add(actions, 0, 3); p.Controls.Add(layout);
-    }
-    private void SelectWindows()
-    {
-        activeEditor = grid.CurrentRow?.DataBoundItem as AccountEditor; loadingWindows = true;
-        windows.Items.Clear();
-        if (activeEditor is { } a)
-        {
-            windowInfo.Text = a.Windows.Count == 0 ? "此账号暂无可展示快照；桥接不会主动查询上游。" : "此行可展示的窗口（需勾选后保存）：";
-            foreach (var w in a.Windows) windows.Items.Add($"{w.Name}   已用 {w.UsedPercent?.ToString("0.##") ?? "未知"}%   {w.Status}   {(w.Stale ? "过期" : "快照")}   重置 {w.ResetAt?.LocalDateTime.ToString("MM-dd HH:mm") ?? "未知"}", a.WindowIds.Contains(w.Id));
-        }
-        loadingWindows = false;
+        filter.Controls.Add(search); filter.Controls.Add(providers);
+        filter.Controls.Add(new Label { Text = "账号额度", AutoSize = true, Font = UiStyle.Heading, Padding = new Padding(14, 3, 6, 3), ForeColor = UiStyle.Ink });
+        filter.Controls.Add(new Label { Text = "开关控制 BrimDeck 展示", AutoSize = true, Font = UiStyle.Small, ForeColor = UiStyle.Muted, Padding = new Padding(12, 5, 0, 0) });
+        search.TextChanged += (_, _) => FilterAccounts(); providers.SelectedIndexChanged += (_, _) => { if (!filtering) FilterAccounts(); };
+        cardsPanel.ClientSizeChanged += (_, _) => LayoutCards();
+        var actions = Flow(); actions.Controls.Add(Button("保存账号选择", async (_, _) => await SaveChoices()));
+        actions.Controls.Add(Button("刷新额度", async (_, _) => await RefreshNow())); actions.Controls.Add(accountHint);
+        layout.Controls.Add(filter, 0, 0); layout.Controls.Add(cardsPanel, 0, 1); layout.Controls.Add(actions, 0, 2); p.Controls.Add(layout);
     }
     private void FilterAccounts()
     {
-        grid.EndEdit();
-        string query = search.Text.Trim(), provider = providers.SelectedItem?.ToString() ?? "全部 Provider";
-        grid.DataSource = new BindingList<AccountEditor>(editors.Values.Where(a => (provider == "全部 Provider" || a.Provider == provider) && (a.Name.Contains(query, StringComparison.OrdinalIgnoreCase) || a.Alias.Contains(query, StringComparison.OrdinalIgnoreCase))).OrderBy(a => a.Order).ThenBy(a => a.Id).ToList());
-        SelectWindows();
+        if (tabs.SelectedIndex != 1 || filtering) return;
+        filtering = true; cardsPanel.SuspendLayout();
+        try
+        {
+            string query = search.Text.Trim(), provider = providers.SelectedItem?.ToString() ?? "全部 Provider";
+            var visible = editors.Values.Where(a => (provider == "全部 Provider" || a.Provider == provider) && (a.Name.Contains(query, StringComparison.OrdinalIgnoreCase) || a.Alias.Contains(query, StringComparison.OrdinalIgnoreCase))).OrderBy(a => a.Order).ThenBy(a => a.Id).ToList();
+            var ids = visible.Select(a => a.Id).ToHashSet();
+            foreach (var id in cards.Keys.Where(id => !ids.Contains(id)).ToArray()) { var card = cards[id]; cardsPanel.Controls.Remove(card); card.Dispose(); cards.Remove(id); }
+            int position = 0;
+            foreach (var editor in visible)
+            {
+                if (!cards.TryGetValue(editor.Id, out var card))
+                {
+                    card = new QuotaCard(editor); card.Edited += (_, _) => { dirty = true; UpdateAccountHint(); };
+                    cards.Add(editor.Id, card); cardsPanel.Controls.Add(card);
+                }
+                card.UpdateData(DateTimeOffset.UtcNow); cardsPanel.Controls.SetChildIndex(card, position++);
+            }
+            UpdateAccountHint(); LayoutCards();
+        }
+        finally { filtering = false; cardsPanel.ResumeLayout(); }
     }
+    private void LayoutCards()
+    {
+        if (cards.Count == 0) return;
+        // Reserve scrollbar width so adding a row never alternates between one and two columns.
+        int width = Math.Max(400, cardsPanel.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 4);
+        int columns = width >= 920 ? 2 : 1;
+        int cardWidth = width / columns - 16;
+        cardsPanel.SuspendLayout();
+        foreach (var card in cards.Values) if (card.Width != cardWidth) card.Width = cardWidth;
+        cardsPanel.ResumeLayout();
+    }
+    private void UpdateAccountHint() => accountHint.Text = $"已选择 {editors.Values.Count(a => a.Selected)} 个账号{(dirty ? " · 有未保存更改" : "")}";
     private BridgeConfig Clone() => JsonSerializer.Deserialize<BridgeConfig>(JsonSerializer.Serialize(runtime.Config, Json.Options), Json.Options)!;
     private async Task SaveChoices()
     {
         try
         {
-            grid.EndEdit(); var config = Clone();
+            var config = Clone();
             config.Accounts = editors.Values.Select(a => new AccountChoice { Id = a.Id, Selected = a.Selected, Alias = a.Alias.Trim(), Order = a.Order, Windows = [.. a.WindowIds] }).ToList();
-            store.Save(config); await runtime.UpdateConfig(config); UpdateAccountScriptChoices(); RenderState();
+            store.Save(config); await runtime.UpdateConfig(config); dirty = false; UpdateAccountHint(); FilterAccounts(); UpdateAccountScriptChoices(); RenderState();
             MessageBox.Show(this, "账号、别名、窗口和顺序已保存。", Text);
         }
         catch (Exception) { MessageBox.Show(this, "保存失败，请检查别名长度和显示顺序。", Text); }
@@ -208,21 +228,34 @@ public sealed class MainForm : Form
         var selected = runtime.Config.Accounts.Where(a => a.Selected).OrderBy(a => a.Order).Select(a => new { a.Id, Name = Json.First(a.Alias, editors.GetValueOrDefault(a.Id)?.Name ?? "账号") }).ToList();
         accountScripts.DataSource = selected;
     }
+    private void RuntimeChanged(object? sender, EventArgs e)
+    {
+        if (!IsHandleCreated || IsDisposed || !Visible || Interlocked.Exchange(ref renderQueued, 1) != 0) return;
+        try { BeginInvoke(() => { Interlocked.Exchange(ref renderQueued, 0); if (!IsDisposed && Visible) RenderState(); }); }
+        catch (InvalidOperationException) { Interlocked.Exchange(ref renderQueued, 0); }
+    }
     private void RenderState()
     {
+        if (IsDisposed) return;
         var s = runtime.Statistics; var q = runtime.Inventory;
-        status.Text = $"CPAMP 统计：{(runtime.StatisticsError.Length == 0 ? "已连接" : runtime.StatisticsError)}\nSQLite：{runtime.DatabaseStatus}\nBrimDeck API：{(runtime.Listening ? "运行中" : runtime.ServerError)}\n账号与快照：{(runtime.QuotaError.Length == 0 ? "已读取" : runtime.QuotaError)}";
-        string Cost(WindowStats w) => w.EstimatedCost is { } money ? "$" + money.ToString("0.00") + "（已知估算）" : "不可用";
+        status.Text = $"CPAMP  {(runtime.StatisticsError.Length == 0 ? "已连接" : runtime.StatisticsError)}    ·    SQLite  {runtime.DatabaseStatus}    ·    桥接 API  {(runtime.Listening ? "运行中" : runtime.ServerError)}";
+        if (runtime.QuotaError.Length > 0 && runtime.QuotaError != "尚未读取") status.Text += "\n账号：" + runtime.QuotaError;
         if (s is not null)
         {
             var a = s.Today; var b = s.Last7Days;
-            summary.Text = $"{(s.Stale ? "⚠ 过期缓存，保留最后成功结果\n" : "")}今日 Token：{a.TotalTokens:N0}        7天 Token：{b.TotalTokens:N0}\n今日费用：{Cost(a)}        7天费用：{Cost(b)}\n\n今日请求：{a.TotalRequests:N0}     成功：{a.SuccessRequests:N0}     失败：{a.FailedRequests:N0}\n成功率：{a.SuccessRate?.ToString("0.00") ?? "N/A"}{(a.SuccessRate.HasValue ? "%" : "")}\n\n选中额度账号：{runtime.Config.Accounts.Count(a => a.Selected)} 个\n最后成功统计：{s.UpdatedAt.LocalDateTime:yyyy-MM-dd HH:mm:ss}\n时区：{s.Timezone}；7天：{(s.SevenDayMode == "rolling" ? "滚动168小时" : "含今天7个自然日")}";
+            string Cost(WindowStats w) => w.EstimatedCost is { } money ? "$" + money.ToString("0.00") : "—";
+            metrics["今日 Token"].Set(UiStyle.Compact(a.TotalTokens)); metrics["7天 Token"].Set(UiStyle.Compact(b.TotalTokens));
+            metrics["今日费用"].Set(Cost(a)); metrics["7天费用"].Set(Cost(b)); metrics["今日请求"].Set(a.TotalRequests.ToString("N0"));
+            metrics["成功请求"].Set(a.SuccessRequests.ToString("N0"), UiStyle.Green); metrics["失败请求"].Set(a.FailedRequests.ToString("N0"), a.FailedRequests > 0 ? UiStyle.Red : UiStyle.Ink);
+            metrics["成功率"].Set(a.SuccessRate is { } rate ? rate.ToString("0.00") + "%" : "N/A");
+            summary.Text = $"{(s.Stale ? "过期缓存  ·  " : "")}更新 {s.UpdatedAt.LocalDateTime:MM-dd HH:mm:ss}  ·  {s.Timezone}  ·  {(s.SevenDayMode == "rolling" ? "滚动168小时" : "含今天7个自然日")}\n已选 {runtime.Config.Accounts.Count(a => a.Selected)} 个额度账号";
         }
-        else summary.Text = "等待读取真实统计数据…\n请在连接设置填写 CPAMP 服务地址和管理密钥。";
-        bridgeAddress.Text = $"桥接地址：http://127.0.0.1:{runtime.Config.Port}   密钥使用 Windows 当前用户加密保存";
-        if (q is not null && q.UpdatedAt != loadedInventory)
+        else { foreach (var tile in metrics.Values) tile.Set("—"); summary.Text = "等待读取数据…"; }
+        bridgeAddress.Text = $"桥接地址：http://127.0.0.1:{runtime.Config.Port}";
+        if (q is not null)
         {
-            loadedInventory = q.UpdatedAt; grid.EndEdit();
+            bool changed = q.UpdatedAt != loadedInventory;
+            loadedInventory = q.UpdatedAt;
             foreach (var a in q.Accounts)
             {
                 if (!editors.TryGetValue(a.Id, out var editor))
@@ -230,20 +263,25 @@ public sealed class MainForm : Form
                     var choice = runtime.Config.Accounts.FirstOrDefault(c => c.Id == a.Id);
                     editor = new AccountEditor { Id = a.Id, Selected = choice?.Selected ?? false, Alias = choice?.Alias ?? "", Order = choice?.Order ?? editors.Count, WindowIds = choice?.Windows.ToList() ?? a.Windows.Where(w => w.Name.StartsWith("5h") || w.Name.StartsWith("Week")).Select(w => w.Id).ToList() }; editors[a.Id] = editor;
                 }
-                editor.Name = a.Name; editor.Provider = a.Provider; editor.Status = a.Status; editor.Updated = a.UpdatedAt?.LocalDateTime.ToString("MM-dd HH:mm") ?? "未知"; editor.Windows = a.Windows;
-                editor.Preview = a.Windows.Count == 0 ? "额度暂不支持 / 未知" : string.Join(" / ", a.Windows.Select(w => $"{w.Name}: {w.UsedPercent?.ToString("0.#") ?? "?"}%{(w.Stale ? " 过期" : "")}"));
+                editor.Name = a.Name; editor.Provider = a.Provider; editor.Status = a.Status; editor.Updated = a.UpdatedAt?.LocalDateTime.ToString("MM-dd HH:mm") ?? "—"; editor.Windows = a.Windows;
             }
             foreach (var choice in runtime.Config.Accounts.Where(c => c.Selected && !editors.ContainsKey(c.Id))) editors[choice.Id] = new AccountEditor { Id = choice.Id, Selected = true, Name = "已移除或身份已变化", Alias = choice.Alias, Order = choice.Order, WindowIds = [..choice.Windows], Status = "需重新选择", Provider = "unknown" };
-            foreach (var e in editors.Values.Where(e => q.Accounts.All(a => a.Id != e.Id))) { e.Status = "已移除 / 身份变化"; e.Preview = "额度未知，需重新选择"; e.Windows = []; }
-            string previous = providers.SelectedItem?.ToString() ?? "全部 Provider"; providers.Items.Clear(); providers.Items.Add("全部 Provider"); foreach (var provider in editors.Values.Select(a => a.Provider).Distinct().Order()) providers.Items.Add(provider); providers.SelectedItem = providers.Items.Contains(previous) ? previous : "全部 Provider";
-            FilterAccounts(); UpdateAccountScriptChoices();
+            var present = q.Accounts.Select(a => a.Id).ToHashSet();
+            foreach (var editor in editors.Values.Where(a => !present.Contains(a.Id))) { editor.Status = "已移除 / 身份变化"; editor.Windows = []; }
+            if (changed)
+            {
+                filtering = true;
+                string previous = providers.SelectedItem?.ToString() ?? "全部 Provider"; providers.Items.Clear(); providers.Items.Add("全部 Provider"); foreach (var provider in editors.Values.Select(a => a.Provider).Distinct().Order()) providers.Items.Add(provider); providers.SelectedItem = providers.Items.Contains(previous) ? previous : "全部 Provider";
+                filtering = false; UpdateAccountScriptChoices();
+            }
+            FilterAccounts();
         }
     }
     private async Task RefreshNow() { UseWaitCursor = true; try { await runtime.Refresh(true); RenderState(); } finally { UseWaitCursor = false; } }
     private void Restore() { Show(); WindowState = FormWindowState.Normal; Activate(); }
     public void CaptureForm(string path, int tab)
     {
-        RenderState(); tabs.SelectedIndex = tab; PerformLayout();
+        tabs.SelectedIndex = tab; RenderState(); PerformLayout();
         using var bitmap = new Bitmap(Width, Height); DrawToBitmap(bitmap, new Rectangle(Point.Empty, Size)); bitmap.Save(path);
     }
     public void ExitForTest() { exiting = true; Close(); }

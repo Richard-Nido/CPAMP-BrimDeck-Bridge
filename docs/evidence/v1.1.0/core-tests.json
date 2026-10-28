@@ -1,0 +1,307 @@
+{
+  "passed": true,
+  "count": 75,
+  "failures": 0,
+  "results": [
+    {
+      "name": "calendar crosses month UTC/local boundary",
+      "passed": true
+    },
+    {
+      "name": "calendar crosses year",
+      "passed": true
+    },
+    {
+      "name": "rolling exactly 168h",
+      "passed": true
+    },
+    {
+      "name": "DST calendar midnight",
+      "passed": true
+    },
+    {
+      "name": "zero requests N/A and zero tokens",
+      "passed": true
+    },
+    {
+      "name": "success/failure 3/0",
+      "passed": true
+    },
+    {
+      "name": "decimal cost exact and incomplete prices explicit",
+      "passed": true
+    },
+    {
+      "name": "success/failure 0/3",
+      "passed": true
+    },
+    {
+      "name": "decimal cost exact and incomplete prices explicit",
+      "passed": true
+    },
+    {
+      "name": "success/failure 250/6",
+      "passed": true
+    },
+    {
+      "name": "decimal cost exact and incomplete prices explicit",
+      "passed": true
+    },
+    {
+      "name": "missing JSON not zero",
+      "passed": true
+    },
+    {
+      "name": "unknown classification rejected",
+      "passed": true
+    },
+    {
+      "name": "remaining65 becomes used35",
+      "passed": true
+    },
+    {
+      "name": "used35 not inverted",
+      "passed": true
+    },
+    {
+      "name": "quota endpoint 0",
+      "passed": true
+    },
+    {
+      "name": "quota endpoint 100",
+      "passed": true
+    },
+    {
+      "name": "unknown quota stays null",
+      "passed": true
+    },
+    {
+      "name": "invalid quota no silent clamp",
+      "passed": true
+    },
+    {
+      "name": "inconsistent remaining rejected",
+      "passed": true
+    },
+    {
+      "name": "old snapshot stale",
+      "passed": true
+    },
+    {
+      "name": "member conflicts fail closed",
+      "passed": true
+    },
+    {
+      "name": "safe stable ID conceals account",
+      "passed": true
+    },
+    {
+      "name": "partial selection ordering alias duplicate names",
+      "passed": true
+    },
+    {
+      "name": "5h only selection",
+      "passed": true
+    },
+    {
+      "name": "5h and weekly selection",
+      "passed": true
+    },
+    {
+      "name": "unselect supported",
+      "passed": true
+    },
+    {
+      "name": "reauthorization does not cross attach",
+      "passed": true
+    },
+    {
+      "name": "DPAPI roundtrip distinct secrets",
+      "passed": true
+    },
+    {
+      "name": "config persistence selections",
+      "passed": true
+    },
+    {
+      "name": "config no plaintext secret",
+      "passed": true
+    },
+    {
+      "name": "remote CPAMP configuration rejected",
+      "passed": true
+    },
+    {
+      "name": "SQLite fixture ready",
+      "passed": true
+    },
+    {
+      "name": "SQLite empty zero",
+      "passed": true
+    },
+    {
+      "name": "SQLite WAL live \u002B half-open exact",
+      "passed": true
+    },
+    {
+      "name": "retry same request_id retained official event semantics",
+      "passed": true
+    },
+    {
+      "name": "SQLite no pricing fake zero",
+      "passed": true
+    },
+    {
+      "name": "SQLite write protection",
+      "passed": true
+    },
+    {
+      "name": "SQLite simultaneous WAL writer read",
+      "passed": true
+    },
+    {
+      "name": "SQLite unknown status rejected",
+      "passed": true
+    },
+    {
+      "name": "SQLite archived missing history rejected",
+      "passed": true
+    },
+    {
+      "name": "SQLite temporary exclusive lock fails explicitly",
+      "passed": true
+    },
+    {
+      "name": "SQLite lock recovery",
+      "passed": true
+    },
+    {
+      "name": "database moved error",
+      "passed": true
+    },
+    {
+      "name": "missing bridge key 401",
+      "passed": true
+    },
+    {
+      "name": "wrong bridge key 401",
+      "passed": true
+    },
+    {
+      "name": "health authenticated",
+      "passed": true
+    },
+    {
+      "name": "cross site Origin denied",
+      "passed": true
+    },
+    {
+      "name": "DNS rebinding Host denied",
+      "passed": true
+    },
+    {
+      "name": "no mutation route",
+      "passed": true
+    },
+    {
+      "name": "API no management secrets",
+      "passed": true
+    },
+    {
+      "name": "empty selection API empty accounts",
+      "passed": true
+    },
+    {
+      "name": "unselected account endpoint 404",
+      "passed": true
+    },
+    {
+      "name": "concurrent clients share cached stats",
+      "passed": true
+    },
+    {
+      "name": "background scheduler does not poll every second",
+      "passed": true
+    },
+    {
+      "name": "background delay follows next refresh deadline",
+      "passed": true
+    },
+    {
+      "name": "fresh statistics reuse snapshot instance",
+      "passed": true
+    },
+    {
+      "name": "fresh quotas reuse snapshot instance",
+      "passed": true
+    },
+    {
+      "name": "HTTP JSON compact",
+      "passed": true
+    },
+    {
+      "name": "source 500 retains stale snapshot",
+      "passed": true
+    },
+    {
+      "name": "source 401 explicit error",
+      "passed": true
+    },
+    {
+      "name": "source reconnect clears stale",
+      "passed": true
+    },
+    {
+      "name": "quota official snapshot used35",
+      "passed": true
+    },
+    {
+      "name": "selected quota alias through HTTP",
+      "passed": true
+    },
+    {
+      "name": "single selected account route",
+      "passed": true
+    },
+    {
+      "name": "cached authentication old key rejected after rotation",
+      "passed": true
+    },
+    {
+      "name": "cached authentication new key accepted",
+      "passed": true
+    },
+    {
+      "name": "listener only loopback",
+      "passed": true
+    },
+    {
+      "name": "exit closes HTTP",
+      "passed": true
+    },
+    {
+      "name": "card edits selection alias order and windows",
+      "passed": true
+    },
+    {
+      "name": "card refresh preserves unsaved edits",
+      "passed": true
+    },
+    {
+      "name": "cards fit two-column layout",
+      "passed": true
+    },
+    {
+      "name": "friendly quota windows",
+      "passed": true
+    },
+    {
+      "name": "relative reset labels",
+      "passed": true
+    },
+    {
+      "name": "metric value uses card width",
+      "passed": true
+    }
+  ]
+}

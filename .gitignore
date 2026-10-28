@@ -21,3 +21,4 @@ dist/state/
 .vs/
 *.log
 verification-local/
+Template/
