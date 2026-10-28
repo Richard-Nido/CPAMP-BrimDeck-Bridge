@@ -288,7 +288,7 @@
       "passed": true
     },
     {
-      "name": "cards fit two-column layout",
+      "name": "cards do not overlap in two-column layout",
       "passed": true
     },
     {

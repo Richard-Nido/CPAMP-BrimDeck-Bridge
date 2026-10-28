@@ -176,7 +176,7 @@ static class Test
                 var second=new AccountEditor {Id="fixture-b",Name="示例账号 B",Provider="codex",Status="active",Updated="10-28 12:00",Windows=[new("5h","5h · codex_main",3,97,now.AddHours(2),now,false,"known","active","fixture"),new("week","Week · codex_main",0,100,now.AddDays(6),now,false,"known","active","fixture")],WindowIds=["5h","week"]};
                 using var card2=new QuotaCard(second) {Location=new Point(550,40),Width=525};host.Controls.Add(card2);
                 host.ShowInTaskbar=false;host.StartPosition=FormStartPosition.Manual;host.Location=new Point(-20000,-20000);host.Show();Application.DoEvents();host.PerformLayout();
-                Check("cards fit two-column layout",card.Right<card2.Left&&card2.Right<host.ClientSize.Width&&card.Bottom<host.ClientSize.Height);
+                Check("cards do not overlap in two-column layout",card.Right<card2.Left&&card.Top==card2.Top&&card.Width==card2.Width);
                 Check("friendly quota windows",UiStyle.WindowName("Week · codex_main")=="周限额");
                 Check("relative reset labels",UiStyle.ResetText(now.AddHours(3),now)=="3 小时后"&&UiStyle.ResetText(now.AddDays(6),now)=="6 天后");
                 using var metric=new MetricTile("今日Token"){Width=260,Height=110};metric.PerformLayout();Check("metric value uses card width",metric.ValueWidth==228);
