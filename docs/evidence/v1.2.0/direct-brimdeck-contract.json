@@ -1,0 +1,55 @@
+{
+  "passed": true,
+  "count": 12,
+  "failures": 0,
+  "results": [
+    {
+      "name": "installed Jint direct official quota and pick fields",
+      "passed": true
+    },
+    {
+      "name": "installed Jint nested official429 keeps last-good stale",
+      "passed": true
+    },
+    {
+      "name": "installed Jint direct CPAMP snapshot source",
+      "passed": true
+    },
+    {
+      "name": "installed Jint direct CPAMP parallel analytics eight metrics",
+      "passed": true
+    },
+    {
+      "name": "installed Jint native CPA six metrics",
+      "passed": true
+    },
+    {
+      "name": "installed Jint unsupported CPA statistics explicitly reported",
+      "passed": true
+    },
+    {
+      "name": "LIVE CPA direct official quota without Bridge or CPAMP proxy",
+      "passed": true
+    },
+    {
+      "name": "LIVE CPA8 missing full statistics reports unsupported without partial fallback",
+      "passed": true
+    },
+    {
+      "name": "LIVE direct CPAMP snapshot and runtime merge without Bridge",
+      "passed": true
+    },
+    {
+      "name": "LIVE CPAMP direct full statistics without Bridge",
+      "passed": true
+    },
+    {
+      "name": "LIVE CPAMP fixed-range reconciliation",
+      "passed": true
+    },
+    {
+      "name": "LIVE Bridge client selected official refresh",
+      "passed": true
+    }
+  ]
+}

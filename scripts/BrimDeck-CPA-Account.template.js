@@ -34,13 +34,14 @@ async function fetchUsage(ctx) {
         if (typeof account.name !== "string" || !Array.isArray(account.windows)) throw new Error("桥接账号字段缺失");
         const unavailable = !["ready", "active", "available"].includes(account.status);
         if (!account.windows.length) {
-            rows.push({ title: account.name, value: "暂无额度", note: unavailable ? statusName(account.status) : "未选择窗口或暂无快照" });
+            rows.push({ title: account.name, value: "暂无额度", note: account.refreshError || (unavailable ? statusName(account.status) : "未选择窗口或暂无快照") });
             continue;
         }
         for (const window of account.windows) {
             if (typeof window.name !== "string") throw new Error("额度窗口字段缺失");
             const stale = data.stale || window.stale;
             const flags = [];
+            if (account.refreshError) flags.push(account.refreshError);
             if (unavailable) flags.push(statusName(account.status));
             if (stale) flags.push("过期 · " + updatedText(window.updatedAt));
             const row = { title: account.name + " · " + windowName(window.name), value: "暂无额度", note: flags.join(" · ") };

@@ -24,6 +24,7 @@ public sealed class CpampClient : IDisposable
     private async Task<JsonElement> Call(string path, object? body, CancellationToken ct)
     {
         using var request = new HttpRequestMessage(body is null ? HttpMethod.Get : HttpMethod.Post, path);
+        request.Headers.CacheControl = new CacheControlHeaderValue { NoCache = true, NoStore = true };
         if (body is not null) request.Content = JsonContent.Create(body);
         using var response = await http.SendAsync(request, HttpCompletionOption.ResponseContentRead, ct);
         if (!response.IsSuccessStatusCode) throw new IOException($"CPAMP HTTP {(int)response.StatusCode}；请检查服务和管理密钥");
@@ -98,10 +99,11 @@ public sealed class CpampClient : IDisposable
         if (!used.HasValue && state == "known") state = "unknown";
         DateTimeOffset? Date(JsonElement e) => e.ValueKind == JsonValueKind.Number && e.TryGetInt64(out var n) && n > 0 ? DateTimeOffset.FromUnixTimeMilliseconds(n) : null;
         var observed = Date(w.Get("observed_at_ms"));
-        var percentSource = w.Get("field_sources").Get("used_percent").Get("observed_at_ms");
+        var percentSource = w.Get("field_sources").Get("quota").Get("observed_at_ms");
+        if (percentSource.ValueKind != JsonValueKind.Number) percentSource = w.Get("field_sources").Get("used_percent").Get("observed_at_ms");
         if (percentSource.ValueKind != JsonValueKind.Number) percentSource = w.Get("field_sources").Get("remaining_percent").Get("observed_at_ms");
         var percentObserved = Date(percentSource) ?? observed;
-        var reset = Date(w.Get("cycle_end_ms"));
+        var reset = Date(w.Get("current_cycle").Get("scheduled_end_ms")) ?? Date(w.Get("cycle_end_ms"));
         string availability = w.Get("availability").Str();
         bool stale = w.Get("stale").Flag() || percentObserved is null || now - percentObserved > TimeSpan.FromMinutes(staleMinutes) || percentObserved > now.AddMinutes(1) || reset <= now;
         if (availability is not ("" or "active" or "available")) state = "inactive_window";
@@ -111,18 +113,18 @@ public sealed class CpampClient : IDisposable
         string id = w.Get("provider_window_id").Str() + "|" + w.Get("model_scope_kind").Str() + "|" + scope;
         return new(id, name, used, remaining, reset, percentObserved, stale, state, availability, w.Get("source").Str());
     }
-    public async Task<QuotaSnapshot> Quotas(DateTimeOffset now, CancellationToken ct)
+    public async Task<QuotaSnapshot> Quotas(DateTimeOffset now, CancellationToken ct, QuotaSnapshot? previous = null)
     {
         if (config.ProtectedAdminKey.Length == 0) throw new InvalidDataException("账号发现需要 CPAMP Admin Key，请在连接设置中填写");
         var root = await Call("/v0/management/auth-files", null, ct);
         var files = root.Get("files");
         if (files.ValueKind != JsonValueKind.Array) throw new InvalidDataException("CPAMP 账号列表格式不兼容");
-        var list = new List<(string Provider, string Name, string Status, string FallbackId, object Target)>();
+        var list = new List<(string Provider, string Name, string Status, string FallbackId, object Target, JsonElement File)>();
         foreach (var file in files.EnumerateArray())
         {
             string provider = Json.First(file.Get("provider").Str(), file.Get("type").Str()).ToLowerInvariant().Replace('_', '-');
             if (provider is "x-ai" or "grok") provider = "xai";
-            string physical = file.Get("name").Str(), auth = file.Get("auth_index").Str();
+            string physical = file.Get("name").Str(), auth = Json.First(file.Get("auth_index").Str(), file.Get("authIndex").Str());
             string member = provider == "codex" ? Member(file) : Json.First(file.Get("account").Str(), file.Get("email").Str());
             string workspace = provider == "codex" ? Workspace(file) : "";
             string name = Json.First(file.Get("label").Str(), file.Get("email").Str(), file.Get("account").Str(), physical, provider);
@@ -134,7 +136,7 @@ public sealed class CpampClient : IDisposable
                 account_snapshot = member, auth_label_snapshot = file.Get("label").Str(), auth_file_snapshot = physical,
                 auth_provider_snapshot = provider, auth_account_id_snapshot = workspace,
                 auth_project_id_snapshot = provider == "codex" ? "" : file.Get("project_id").Str(), auth_index = auth, source = physical
-            }));
+            }, file));
         }
         var accounts = new List<QuotaAccount>();
         string[] supported = ["codex", "claude", "antigravity", "kimi", "xai", "devin", "meta"];
@@ -144,7 +146,7 @@ public sealed class CpampClient : IDisposable
         foreach (var batch in query.Chunk(200))
         {
             var response = await Call("/v0/management/quota-snapshots/query", new
-            { now_ms = now.ToUnixTimeMilliseconds(), include_inactive = false, accounts = batch.Select(a => new { row_key = a.FallbackId, provider = a.Provider, account = a.Target }).ToArray() }, ct);
+            { now_ms = now.ToUnixTimeMilliseconds(), include_inactive = true, accounts = batch.Select(a => new { row_key = a.FallbackId, provider = a.Provider, account = a.Target }).ToArray() }, ct);
             if (response.Get("items").ValueKind != JsonValueKind.Array) throw new InvalidDataException("CPAMP 额度快照格式不兼容");
             foreach (var item in response.Get("items").EnumerateArray()) results[item.Get("row_key").Str()] = item;
         }
@@ -158,13 +160,51 @@ public sealed class CpampClient : IDisposable
                 if (item.Get("windows").ValueKind == JsonValueKind.Array)
                     windows = item.Get("windows").EnumerateArray().Select(w => ParseWindow(w, now, config.StaleMinutes)).ToList();
             }
+            if (a.Provider == "codex") windows = CodexQuota.Merge(windows, CodexQuota.Runtime(a.File, now, config.StaleMinutes));
+            windows = windows.Where(w => w.Status != "inactive_window").ToList();
             var observed = windows.Where(w => w.UpdatedAt.HasValue).Select(w => w.UpdatedAt).DefaultIfEmpty().Max();
-            accounts.Add(new(id, a.Name, a.Provider, a.Status, observed, windows));
+            accounts.Add(new(id, a.Name, a.Provider, a.Status, observed, windows) { CredentialName = a.File.Get("name").Str(), MemberEmail = Member(a.File), WorkspaceId = Workspace(a.File) });
         }
         // Same official stable account may have multiple physical files. Merge once, keep a conservative status.
-        return new(now, accounts.GroupBy(a => a.Id).Select(g => g.First() with
+        var merged = accounts.GroupBy(a => a.Id).Select(g => g.First() with
         { Status = g.All(a => a.Status is "ready" or "active" or "available") ? g.First().Status : g.FirstOrDefault(a => a.Status is "disabled" or "unavailable")?.Status ?? g.First().Status,
-            Windows = g.SelectMany(a => a.Windows).GroupBy(w => w.Id).Select(w => w.OrderByDescending(x => x.UpdatedAt).First()).ToList() }).ToList());
+            Windows = g.SelectMany(a => a.Windows).GroupBy(w => w.Id).Select(w => w.OrderByDescending(x => x.UpdatedAt).First()).ToList() }).ToList();
+        if (config.QuotaSource == "official")
+        {
+            using var concurrency = new SemaphoreSlim(3);
+            await Task.WhenAll(merged.ToArray().Select(async (account, index) =>
+            {
+                if (account.Provider != "codex" || !config.Accounts.Any(c => c.Id == account.Id && c.Selected)) return;
+                await concurrency.WaitAsync(ct);
+                try
+                {
+                    var matches = list.Where(a => a.Provider == "codex" && a.File.Get("name").Str() == account.CredentialName).ToList();
+                    if (matches.Count != 1) throw new InvalidDataException("凭证身份不明确，请重新选择账号");
+                    var file = matches[0].File;
+                    if (file.Get("disabled").Flag()) throw new InvalidDataException("账号已禁用，未查询官方额度");
+                    string auth = Json.First(file.Get("auth_index").Str(), file.Get("authIndex").Str());
+                    if (auth.Length == 0) throw new InvalidDataException("账号缺少 auth_index");
+                    var headers = new Dictionary<string, string> { ["Authorization"] = "Bearer $TOKEN$", ["Content-Type"] = "application/json", ["User-Agent"] = "codex-tui/0.149.1" };
+                    if (Workspace(file) is { Length: > 0 } workspace) headers["Chatgpt-Account-Id"] = workspace;
+                    var response = await Call("/v0/management/api-call", new { authIndex = auth, method = "GET", url = CodexQuota.UsageUrl, header = headers }, ct);
+                    var status = response.Get("status_code"); if (status.ValueKind == JsonValueKind.Undefined) status = response.Get("statusCode");
+                    if (!status.TryGetInt32(out int code) || code != 200) throw new InvalidDataException($"官方额度 HTTP {(status.ValueKind == JsonValueKind.Number ? code : 0)}");
+                    var body = response.Get("body");
+                    using var doc = body.ValueKind == JsonValueKind.String ? JsonDocument.Parse(body.GetString()!) : null;
+                    var fresh = CodexQuota.Parse(doc?.RootElement ?? body, DateTimeOffset.UtcNow, config.StaleMinutes);
+                    merged[index] = account with { Windows = fresh, UpdatedAt = fresh.Max(w => w.UpdatedAt), RefreshError = null };
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+                {
+                    // Do not silently switch sources on an official-query failure.
+                    var old = previous?.Accounts.FirstOrDefault(a => a.Id == account.Id && a.Windows.Any(w => w.Source == "CPA official wham/usage"));
+                    merged[index] = account with { Windows = old?.Windows.Select(w => w with { Stale = true }).ToList() ?? [], UpdatedAt = old?.UpdatedAt,
+                        RefreshError = ex is InvalidDataException or IOException ? ex.Message : "官方额度读取失败或超时，下次自动重试" };
+                }
+                finally { concurrency.Release(); }
+            }));
+        }
+        return new(DateTimeOffset.UtcNow, merged);
     }
     public async Task<JsonElement> Dashboard(long start, long end, CancellationToken ct) => await Call($"/v0/management/dashboard/summary?today_start_ms={start}&now_ms={end}", null, ct);
     public void Dispose() => http.Dispose();

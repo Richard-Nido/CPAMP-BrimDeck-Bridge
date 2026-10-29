@@ -78,9 +78,17 @@ public sealed class BridgeRuntime : IAsyncDisposable
                 output.Add(new(choice.Id, Json.First(choice.Alias, "已移除账号"), "unknown", "missing_identity_reselect_required", null, []));
                 continue;
             }
-            output.Add(account with { Name = Json.First(choice.Alias, account.Name), Windows = account.Windows.Where(w => choice.Windows.Contains(w.Id)).ToList() });
+            output.Add(account with { Name = Json.First(choice.Alias, account.Name), Windows = account.Windows.Where(w => choice.Windows.Any(id => id == w.Id || account.Provider == "codex" && SameCodexWindow(id, w.Id))).ToList() });
         }
         return q with { Accounts = output };
+    }
+    public static bool SameCodexWindow(string first, string second)
+    {
+        if (first == second) return true;
+        var a = first.Split('|'); var b = second.Split('|');
+        if (a.Length != 3 || b.Length != 3 || a[0] != b[0] || a[0] is not ("five-hour" or "weekly" or "monthly")) return false;
+        bool Main(string[] p) => p[1] == "all" && p[2] == "" || p[1] == "family" && p[2] == "codex_main";
+        return Main(a) && Main(b);
     }
     public async Task UpdateConfig(BridgeConfig config)
     {
@@ -94,7 +102,8 @@ public sealed class BridgeRuntime : IAsyncDisposable
             Config = config;
             lock (clientLock) { client?.Dispose(); client = null; }
             if (sourceChanged || windowChanged) { stats = null; LastStatisticsAttempt = default; StatisticsError = "设置已更新，等待读取"; }
-            if (sourceChanged) { quotas = null; LastQuotaAttempt = default; QuotaError = "设置已更新，等待读取"; }
+            if (sourceChanged || old.QuotaSource != config.QuotaSource) { quotas = null; LastQuotaAttempt = default; QuotaError = "设置已更新，等待读取"; }
+            else if (!old.Accounts.Where(a => a.Selected).Select(a => a.Id).Order().SequenceEqual(config.Accounts.Where(a => a.Selected).Select(a => a.Id).Order())) LastQuotaAttempt = default;
             if (old.Port != config.Port || old.ProtectedBridgeKey != config.ProtectedBridgeKey)
             { await StopServer(); await StartServer(); }
         }
@@ -160,7 +169,7 @@ public sealed class BridgeRuntime : IAsyncDisposable
             {
                 if (!force && DateTimeOffset.UtcNow - LastQuotaAttempt < TimeSpan.FromSeconds(Config.QuotaSeconds)) return;
                 LastQuotaAttempt = DateTimeOffset.UtcNow;
-                quotas = await Client.Quotas(DateTimeOffset.UtcNow, stop.Token); QuotaError = "";
+                quotas = await Client.Quotas(DateTimeOffset.UtcNow, stop.Token, quotas); QuotaError = "";
             }
             catch (Exception ex) { QuotaError = SafeError(ex); }
             finally { quotaGate.Release(); }
@@ -190,7 +199,11 @@ public sealed class BridgeRuntime : IAsyncDisposable
                 if (ctx.Request.Method != "GET") { ctx.Response.StatusCode = 405; return; }
                 await next(ctx);
             });
-            app.MapGet("/health", () => Results.Json(new { status = StatisticsError.Length == 0 && QuotaError.Length == 0 ? "ok" : "degraded", statistics = StatisticsError.Length == 0 ? "ok" : "unavailable", quotas = QuotaError.Length == 0 ? "ok" : "unavailable", sqlite = DatabaseStatus, version = "1.1.0" }, Json.HttpOptions));
+            app.MapGet("/health", () =>
+            {
+                int accountErrors = quotas?.Accounts.Count(a => a.RefreshError is { Length: > 0 }) ?? 0;
+                return Results.Json(new { status = StatisticsError.Length == 0 && QuotaError.Length == 0 && accountErrors == 0 ? "ok" : "degraded", statistics = StatisticsError.Length == 0 ? "ok" : "unavailable", quotas = QuotaError.Length > 0 ? "unavailable" : accountErrors > 0 ? "partial" : "ok", quotaAccountErrors = accountErrors, quotaSource = Config.QuotaSource, sqlite = DatabaseStatus, version = "1.2.0" }, Json.HttpOptions);
+            });
             app.MapGet("/v1/stats", () => Statistics is { } value ? Results.Json(value, Json.HttpOptions) : Results.Json(new { status = "error", error = StatisticsError }, statusCode: 503));
             IResult Quotas(string? id)
             {

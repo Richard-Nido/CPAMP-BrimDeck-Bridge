@@ -1,0 +1,102 @@
+{
+  "version": "1.2.0",
+  "archive": "CPAMP-BrimDeck-Bridge-v1.2.0-win-x64.zip",
+  "archiveSha256": "5a2300cb1c0fe37417fb2576f15f358a0ca3c18549af53532b1c806474558723",
+  "files": [
+    {
+      "path": "CPAMP-BrimDeck-Bridge.exe",
+      "bytes": 83034504,
+      "sha256": "34cbd72ff51fd064f5686a3dacbffee5a2302668d94efb339491aff128ed3859"
+    },
+    {
+      "path": "README.md",
+      "bytes": 5066,
+      "sha256": "1348b96e3ec90e363e3caa6ee4af4fdcbe26809c12f1af62d698b9ac9f396008"
+    },
+    {
+      "path": "使用教程.md",
+      "bytes": 17427,
+      "sha256": "c6ab769a21e7061ad846e1efe04f9541a98184014cbbfb9154e21cb673c0d926"
+    },
+    {
+      "path": "BUILD.md",
+      "bytes": 6748,
+      "sha256": "fc08d6ccfee43480c747edbbaa9b5b6ca56b94a150cb01c4c8c27887c506643b"
+    },
+    {
+      "path": "TEST_REPORT.md",
+      "bytes": 3702,
+      "sha256": "f5f49bee6b00104206674c55c3c4f966001ad9d4d76710d243cb8e9cb9e34834"
+    },
+    {
+      "path": "LICENSE",
+      "bytes": 1091,
+      "sha256": "9ab8f2c6774320c5f51e47dc1ede8677eac7e4a26b9f81a0ce11618765de6fa5"
+    },
+    {
+      "path": "THIRD_PARTY_NOTICES.md",
+      "bytes": 1268,
+      "sha256": "5f034a63a545ad9ebaf63608ed4d65853066066ce3dda4a8076118313ce9e568"
+    },
+    {
+      "path": "SOURCE_INSPECTION.md",
+      "bytes": 9434,
+      "sha256": "271b9e1640cbf622ca7ec1dfe5ea1184ef867043e67c3db4ab9b7c7b3992288b"
+    },
+    {
+      "path": "BrimDeck-CPA-Account.template.js",
+      "bytes": 4419,
+      "sha256": "5cac909f59d79c599c7d91e5fe0b89457aa9c50df6905f5e9a8ec5e9ea4af63f"
+    },
+    {
+      "path": "BrimDeck-CPA-Direct-Codex.js",
+      "bytes": 13231,
+      "sha256": "de091767d8df543130cf950fcc7e7c3a9f6a45b6d3d200984f8203ac8db20850"
+    },
+    {
+      "path": "BrimDeck-CPA-Direct-Statistics.js",
+      "bytes": 2324,
+      "sha256": "e8ca7888fbba69f8c4396fb1ee3898d8eef1c56dda9ec913f3ba33facc1123c3"
+    },
+    {
+      "path": "BrimDeck-CPA-Quotas.js",
+      "bytes": 4192,
+      "sha256": "456d74c64c1e2cfacdfe6bd1237c8f4815586d0b7f4d7b7133935ec8a2b901d8"
+    },
+    {
+      "path": "BrimDeck-CPA-Statistics.js",
+      "bytes": 3259,
+      "sha256": "fdec2e8b4a25fdab9a781a6f2daa9b49adfd0c68641738d421d52bab5cd9519f"
+    },
+    {
+      "path": "BrimDeck-CPAMP-Direct-Statistics.js",
+      "bytes": 3272,
+      "sha256": "4f9a24ca927b5e5902c2b8efd093e83736926c6b92f6713ad855896c074af0b0"
+    },
+    {
+      "path": "licenses/ASPNETCORE-THIRD-PARTY-NOTICES.txt",
+      "bytes": 56748,
+      "sha256": "307d014f65d8482314f1400ddeae7a0cbabb96c2207bcc77f6233cc10588e5d9"
+    },
+    {
+      "path": "licenses/DOTNET-LICENSE.txt",
+      "bytes": 1139,
+      "sha256": "d7a68596ab69b06f51ca278a6545148e4269a9381c26d597c13df5d88e08cf5b"
+    },
+    {
+      "path": "licenses/DOTNET-THIRD-PARTY-NOTICES.txt",
+      "bytes": 68910,
+      "sha256": "b60b2912da28eaa6518593c9e2efb5334ee062d3c42e80d8fdfa806b3dc52977"
+    },
+    {
+      "path": "licenses/WINDOWSDESKTOP-LICENSE.txt",
+      "bytes": 1137,
+      "sha256": "a89886665765362eb77e0f8e26602c924520041d1711b2eedc136434fe4d01ab"
+    },
+    {
+      "path": "images/account-cards-preview.png",
+      "bytes": 24564,
+      "sha256": "3896888b1d93cf43c2c5e94cc5ec128f91383056484525e6b2a7e04dda8d5ab1"
+    }
+  ]
+}

@@ -15,12 +15,12 @@ internal sealed class QuotaWindowRow : Panel
     {
         this.editor = editor; WindowId = window.Id; Height = 86; BackColor = Color.White;
         Controls.AddRange([selected, remaining, track, used, reset]);
-        selected.CheckedChanged += (_, _) => { if (loading) return; if (selected.Checked && !editor.WindowIds.Contains(WindowId)) editor.WindowIds.Add(WindowId); if (!selected.Checked) editor.WindowIds.Remove(WindowId); SelectionEdited?.Invoke(this, EventArgs.Empty); };
+        selected.CheckedChanged += (_, _) => { if (loading) return; editor.WindowIds.RemoveAll(id => id == WindowId || editor.Provider == "codex" && BridgeRuntime.SameCodexWindow(id, WindowId)); if (selected.Checked) editor.WindowIds.Add(WindowId); SelectionEdited?.Invoke(this, EventArgs.Empty); };
         UpdateWindow(window, DateTimeOffset.UtcNow);
     }
     public void UpdateWindow(QuotaWindow w, DateTimeOffset now)
     {
-        loading = true; selected.Text = UiStyle.WindowName(w.Name); selected.Checked = editor.WindowIds.Contains(w.Id); selected.AccessibleName = $"展示 {selected.Text} 窗口"; loading = false;
+        loading = true; selected.Text = UiStyle.WindowName(w.Name); selected.Checked = editor.WindowIds.Any(id => id == w.Id || editor.Provider == "codex" && BridgeRuntime.SameCodexWindow(id, w.Id)); selected.AccessibleName = $"展示 {selected.Text} 窗口"; loading = false;
         bool known = w.Status == "known" && w.RemainingPercent.HasValue;
         remaining.Text = known ? $"剩余 {w.RemainingPercent:0.#}%" : w.Status == "invalid_percent" ? "额度数据异常" : "暂无额度";
         remaining.ForeColor = known ? UiStyle.Ink : UiStyle.Muted;
@@ -69,7 +69,8 @@ internal sealed class QuotaCard : Surface
     {
         name.Text = Json.First(Editor.Alias, Editor.Name); provider.Text = Editor.Provider.ToUpperInvariant() + (Editor.Alias.Length > 0 ? " · " + Editor.Name : ""); provider.AutoEllipsis = true; avatar.Text = Editor.Provider.Length == 0 ? "?" : Editor.Provider[..1].ToUpperInvariant();
         status.Text = UiStyle.CredentialStatus(Editor.Status); status.ForeColor = Editor.Status is "active" or "ready" or "available" ? UiStyle.Green : UiStyle.Amber;
-        updated.Text = "更新 " + Editor.Updated;
+        updated.Text = Editor.RefreshError ?? ("更新 " + Editor.Updated + (Editor.Windows.Count > 0 ? " · " + Editor.Windows[0].Source : ""));
+        updated.AutoEllipsis = true; tooltip.SetToolTip(updated, updated.Text);
         tooltip.SetToolTip(name, Editor.Name); tooltip.SetToolTip(show, "在 BrimDeck 展示此账号");
         var ids = Editor.Windows.Select(w => w.Id).ToHashSet();
         foreach (var id in rows.Keys.Where(id => !ids.Contains(id)).ToArray()) { var row = rows[id]; Controls.Remove(row); row.Dispose(); rows.Remove(id); }

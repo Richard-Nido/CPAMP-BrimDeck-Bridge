@@ -61,3 +61,28 @@ dotnet run --project tests/BrimDeck.Contract/BrimDeck.Contract.csproj -p:BrimDec
 基线 CPAMP v1.14.9、BrimDeck 1.2.1。CPAMP 升级后核对：analytics 请求 / summary 字段、Bearer 认证、auth-files 元信息、quota-snapshots/query 的目标身份规则和生命周期 / field_sources；无 API 密钥降级还要核对 usage_events 与归档覆盖表。字段变化应修适配器并重新测试，不能在原数据库执行迁移。
 
 BrimDeck 升级后核对 fetchUsage(ctx)、Jint / parser、percent 表示已用、原生折叠环和最大应用列数，再跑原引擎测试。通过真实相同起止时间的对账后才更新兼容声明。定期用受支持的 .NET 8 servicing SDK 重建自包含 EXE，以带上运行时安全修复。
+
+## v1.2.0 构建与独立脚本
+
+新增三份直连脚本（额度脚本含两种来源）随 `build.ps1` 复制至 dist，且作为资源嵌入 EXE，生成脚本不依赖外部 JS 文件。源码里的通用 ACCOUNT 选择器不包含真实账号；只有用户点击复制时才生成本机个人选择器。
+
+新增检查：
+
+```powershell
+node tests/direct-scripts.test.mjs
+./tests/run-direct-contract.ps1 -BrimDeckInstall 'D:/BrimDeck/BrimDeck'
+```
+
+后一命令需要 PowerShell 7.6 / .NET 10 运行时和已安装 BrimDeck 1.2.1，在真实 Jint/MetricParser 中执行本地模拟响应，不改 BrimDeck 设置。先用 .NET 8 SDK 运行 `dotnet build src/Bridge/Bridge.csproj -c Release`。`-Live` 是可选本机集成检查，要求自己准备 `tests/live-state` 的 CPAMP 连接和 `tests/output/cpa-state` 的 CPA 连接（同一 ConfigStore/DPAPI 格式），不从测试代码自动提取凭证。
+
+核心测试新增真实30秒调度周期检查：更新模拟服务快照后，等待后台自动读取，断言35%变为43%，不调用手动刷新。HTTP/SQLite/旧脚本测试继续运行。
+
+额度 `quotaSource` 配置为 `cpamp` 或 `official`，省略时默认 `cpamp`。官方模式通过既有 CPAMP 管理代理转发至 CPA，不存储 OAuth Token。CPA 上游 HTTP 状态在 api-call 的 `status_code` 中，不能仅凭外层200当作查询成功。
+
+CPA v8 移除了部分旧版统计 API。维护原生统计脚本时必须区分旧版 `/usage`、OAuth auth-files 请求计数、API-key 请求计数，不消费 `/usage/queue`，不把局部计数当作完整历史。按用户选择，缺少完整接口时直接报告不支持，不降级显示局部计数。
+
+原有桥接脚本也可通过 PowerShell 7.6 复现原引擎测试：
+
+./tests/run-bridge-contract.ps1 -BrimDeckInstall 'D:/BrimDeck/BrimDeck'
+
+增加 -BridgeExe 'dist/CPAMP-BrimDeck-Bridge.exe' 进行真实自包含EXE链路检查（需 tests/live-state）。

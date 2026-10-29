@@ -60,6 +60,28 @@ static class Test
         Check("invalid quota no silent clamp", CpampClient.ParseWindow(W(120, null), now, 15).Status == "invalid_percent");
         Check("inconsistent remaining rejected", CpampClient.ParseWindow(W(35, 35), now, 15).UsedPercent is null);
         Check("old snapshot stale", CpampClient.ParseWindow(W(35, 65, true), now, 15).Stale);
+        Check("old config defaults to CPAMP snapshots", new BridgeConfig().QuotaSource == "cpamp");
+        var mixed = E(JsonSerializer.Serialize(new { used_percent = 6, remaining_percent = 94, observed_at_ms = now.ToUnixTimeMilliseconds(),
+            field_sources = new { quota = new { observed_at_ms = now.AddMinutes(-20).ToUnixTimeMilliseconds() } }, window_kind = "five_hour", provider_window_id = "five-hour", model_scope_kind = "family", model_scope_key = "codex_main",
+            cycle_end_ms = now.AddHours(-1).ToUnixTimeMilliseconds(), current_cycle = new { scheduled_end_ms = now.AddHours(1).ToUnixTimeMilliseconds() } }));
+        var mixedWindow = CpampClient.ParseWindow(mixed, now, 15);
+        Check("CPAMP quota field timestamp wins over fresh metadata", mixedWindow.UpdatedAt?.ToUnixTimeMilliseconds() == now.AddMinutes(-20).ToUnixTimeMilliseconds() && mixedWindow.Stale);
+        Check("CPAMP current cycle reset wins over legacy cycle end", mixedWindow.ResetAt?.ToUnixTimeMilliseconds() == now.AddHours(1).ToUnixTimeMilliseconds());
+        var official = E("{\"rate_limit\":{\"primary_window\":{\"used_percent\":6,\"limit_window_seconds\":18000,\"reset_after_seconds\":3600},\"secondary_window\":{\"used_percent\":17,\"limit_window_seconds\":604800,\"reset_after_seconds\":86400}}}");
+        var officialWindows = CodexQuota.Parse(official, now, 15);
+        Check("official percentages and stable CPAMP scope IDs", officialWindows.Count == 2 && officialWindows[0].Id == "five-hour|family|codex_main" && officialWindows[0].UsedPercent == 6);
+        Check("official relative reset uses observation time", officialWindows[0].ResetAt == DateTimeOffset.FromUnixTimeSeconds(now.ToUnixTimeSeconds() + 3600));
+        var runtimeFile = E(JsonSerializer.Serialize(new { quota = new { observed_at = now.ToString("O"), signals = new Dictionary<string,string> {
+            ["X-Codex-Active-Limit"]="premium",["X-Codex-Primary-Used-Percent"]="6",["X-Codex-Primary-Window-Minutes"]="300",["X-Codex-Primary-Reset-At"]=now.AddHours(1).ToUnixTimeSeconds().ToString() } } }));
+        var runtimeWindows = CodexQuota.Runtime(runtimeFile, now, 15);
+        Check("CPAMP runtime header quota exact percent", runtimeWindows.Count == 1 && runtimeWindows[0].UsedPercent == 6);
+        Check("newer runtime replaces stale persisted same scope", CodexQuota.Merge([mixedWindow], runtimeWindows)[0].UsedPercent == 6 && !CodexQuota.Merge([mixedWindow], runtimeWindows)[0].Stale);
+        Check("older runtime never overwrites newer snapshot", CodexQuota.Merge([runtimeWindows[0] with { UsedPercent = 7, UpdatedAt = now.AddSeconds(1) }],runtimeWindows)[0].UsedPercent == 7);
+        Check("inactive lifecycle never revived", CodexQuota.Merge([mixedWindow with { Status = "inactive_window" }],runtimeWindows)[0].Status == "inactive_window");
+        Check("legacy all-scope window selection ID retained",CodexQuota.Merge([mixedWindow with {Id="five-hour|all|",UsedPercent=1}],runtimeWindows) is { Count:1 } legacy && legacy[0].Id=="five-hour|all|"&&legacy[0].UsedPercent==6);
+        Check("runtime fills missing snapshot percent timestamp",CodexQuota.Merge([mixedWindow with {UpdatedAt=null,UsedPercent=null}],runtimeWindows)[0].UsedPercent==6);
+        Check("main window selection survives source scope transition",BridgeRuntime.SameCodexWindow("five-hour|all|","five-hour|family|codex_main"));
+        Check("scoped additional windows never become main windows",!BridgeRuntime.SameCodexWindow("five-hour|family|spark","five-hour|family|codex_main"));
         Check("member conflicts fail closed", CpampClient.Member(E("{\"account\":\"a@example.test\",\"email\":\"b@example.test\"}")) == "");
         Check("safe stable ID conceals account", CpampClient.SafeId("codex", "secret@example.test").Length == 64 && CpampClient.SafeId("codex", "x") == CpampClient.SafeId("codex", "x"));
         var q = new QuotaSnapshot(now, [new("a", "duplicate", "codex", "ready", now, [new("5h", "5h", 35,65,now.AddHours(1),now,false,"known","active","fixture"),new("week", "Week",72,28,now.AddDays(1),now,false,"known","active","fixture")]), new("b","duplicate","codex","disabled",now,[]) ]);
@@ -111,14 +133,18 @@ static class Test
     }
     static async Task ServerTests()
     {
-        int mockPort=FreePort(), bridgePort=FreePort(); int fail=0, requests=0;
+        int mockPort=FreePort(), bridgePort=FreePort(); int fail=0, requests=0, officialRequests=0, officialStatus=200, snapshotPercent=35; bool runtimeTelemetry=false; string officialIndex="changed-index";
         var builder=WebApplication.CreateSlimBuilder();builder.Logging.ClearProviders();builder.WebHost.UseKestrel(o=>o.Listen(IPAddress.Loopback,mockPort));
         await using var mock=builder.Build();
         mock.MapPost("/v0/management/monitoring/analytics",async (HttpContext c)=>
         { Interlocked.Increment(ref requests); if(fail!=0){c.Response.StatusCode=fail;return;} await c.Response.WriteAsJsonAsync(new {summary=new {total_calls=10,success_calls=9,failure_calls=1,total_tokens=123456,total_cost=.123456789m}}); });
-        mock.MapGet("/v0/management/auth-files",()=>new {files=new[] {new {provider="codex",name="fixture.json",auth_index="changed-index",account="a@example.test",email="a@example.test",status="ready",disabled=false}}});
+        mock.MapGet("/v0/management/auth-files",()=>new {files=new[] {new {provider="codex",name="fixture.json",auth_index="changed-index",account="a@example.test",email="a@example.test",status="ready",disabled=false,
+            quota=runtimeTelemetry?new {observed_at=DateTimeOffset.UtcNow.ToString("O"),signals=new Dictionary<string,string>{["X-Codex-Primary-Used-Percent"]="47",["X-Codex-Primary-Window-Minutes"]="300",["X-Codex-Primary-Reset-After-Seconds"]="3600"}}:null}}});
+        mock.MapPost("/v0/management/api-call",async(HttpContext c)=>
+        { Interlocked.Increment(ref officialRequests); using var d=await JsonDocument.ParseAsync(c.Request.Body); officialIndex=d.RootElement.Get("authIndex").Str();
+          await c.Response.WriteAsJsonAsync(new {status_code=officialStatus,body="{\"rate_limit\":{\"primary_window\":{\"used_percent\":12,\"limit_window_seconds\":18000,\"reset_after_seconds\":3600}}}"}); });
         mock.MapPost("/v0/management/quota-snapshots/query",async(HttpContext c)=>
-        {using var doc=await JsonDocument.ParseAsync(c.Request.Body);string row=doc.RootElement.Get("accounts")[0].Get("row_key").Str();await c.Response.WriteAsJsonAsync(new {items=new[] {new {row_key=row,account_key="stable-cpamp-key",windows=new[] {new {provider_window_id="five-hour",window_kind="five_hour",model_scope_kind="all",used_percent=35,remaining_percent=65,observed_at_ms=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),availability="active"}}}}});});
+        {using var doc=await JsonDocument.ParseAsync(c.Request.Body);string row=doc.RootElement.Get("accounts")[0].Get("row_key").Str();await c.Response.WriteAsJsonAsync(new {items=new[] {new {row_key=row,account_key="stable-cpamp-key",windows=new[] {new {provider_window_id="five-hour",window_kind="five_hour",model_scope_kind="all",used_percent=snapshotPercent,remaining_percent=100-snapshotPercent,observed_at_ms=(runtimeTelemetry?DateTimeOffset.UtcNow.AddMinutes(-1):DateTimeOffset.UtcNow).ToUnixTimeMilliseconds(),availability="active"}}}}});});
         await mock.StartAsync();
         var cfg=new BridgeConfig {CpampUrl=$"http://127.0.0.1:{mockPort}",Port=bridgePort,ProtectedAdminKey=SecretStore.Protect("fixture-admin"),ProtectedBridgeKey=SecretStore.Protect("fixture-bridge")};
         await using var runtime=new BridgeRuntime(cfg);await runtime.Start();await runtime.Refresh(true);
@@ -147,12 +173,40 @@ static class Test
         var c=JsonSerializer.Deserialize<BridgeConfig>(JsonSerializer.Serialize(cfg,Bridge.Json.Options),Bridge.Json.Options)!;c.Accounts=[new(){Id=runtime.Inventory!.Accounts[0].Id,Selected=true,Alias="测试账号",Windows=[runtime.Inventory.Accounts[0].Windows[0].Id]}];await runtime.UpdateConfig(c);
         var quota=E(await http.GetStringAsync("/v1/quotas"));Check("selected quota alias through HTTP",quota.Get("accounts")[0].Get("name").Str()=="测试账号");
         string safe=c.Accounts[0].Id;Check("single selected account route",(await http.GetAsync("/v1/quotas/"+safe)).StatusCode==HttpStatusCode.OK);
+        Check("snapshot mode never calls official endpoint",officialRequests==0);
+        c.QuotaSource="official";await runtime.UpdateConfig(c);await runtime.Refresh(true);
+        for(int i=0;runtime.Inventory is null&&i<50;i++)await Task.Delay(50);
+        Check("official mode queries only selected with current auth index",officialRequests>0&&officialIndex=="changed-index"&&runtime.Inventory?.Accounts[0].Windows[0].UsedPercent==12);
+        Check("saved legacy window selection survives official source switch through HTTP",E(await http.GetStringAsync("/v1/quotas")).Get("accounts")[0].Get("windows").GetArrayLength()==1);
+        officialStatus=429;await runtime.Refresh(true);
+        Check("official429 retains last official value as stale per account",runtime.Inventory?.Accounts[0] is { RefreshError:not null } a && a.RefreshError.Contains("429")&&a.Windows[0].UsedPercent==12&&a.Windows[0].Stale);
+        Check("health reports partial per-account official failures",E(await http.GetStringAsync("/health")).Get("quotas").Str()=="partial");
+        officialStatus=200;await runtime.Refresh(true);Check("official reconnect clears per-account error",runtime.Inventory?.Accounts[0].RefreshError is null&&runtime.Inventory?.Accounts[0].Windows[0].Stale==false);
+        c.Accounts[0].Selected=false;await runtime.UpdateConfig(c);int officialBefore=officialRequests;await runtime.Refresh(true);
+        Check("official unselected accounts never queried",officialRequests==officialBefore);
+        c.QuotaSource="cpamp";c.Accounts[0].Selected=true;await runtime.UpdateConfig(c);await runtime.Refresh(true);
+        Check("switch back to CPAMP restores snapshots",runtime.Inventory?.Accounts[0].Windows[0].UsedPercent==35);
+        runtimeTelemetry=true;
+        using(var mergedClient=new CpampClient(c))
+        {
+            var mergedInventory=await mergedClient.Quotas(DateTimeOffset.UtcNow,CancellationToken.None);
+            Check("client automatically merges newer auth-files quota into persisted snapshot",mergedInventory.Accounts[0].Windows.Count==1&&mergedInventory.Accounts[0].Windows[0].UsedPercent==47&&mergedInventory.Accounts[0].Windows[0].Source=="CPAMP auth-files quota");
+        }
+        runtimeTelemetry=false;
         var rotated=JsonSerializer.Deserialize<BridgeConfig>(JsonSerializer.Serialize(c,Bridge.Json.Options),Bridge.Json.Options)!;
         rotated.ProtectedBridgeKey=SecretStore.Protect("rotated-bridge");await runtime.UpdateConfig(rotated);
         Check("cached authentication old key rejected after rotation",(await http.GetAsync("/health")).StatusCode==HttpStatusCode.Unauthorized);
         http.DefaultRequestHeaders.Authorization=new("Bearer","rotated-bridge");Check("cached authentication new key accepted",(await http.GetAsync("/health")).StatusCode==HttpStatusCode.OK);
         Check("listener only loopback",System.Net.NetworkInformation.IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners().Where(a=>a.Port==bridgePort).All(a=>IPAddress.IsLoopback(a.Address)));
         await runtime.DisposeAsync(); // explicit close tested before scope disposal below; guard expected in runtime.
+        var automaticConfig=new BridgeConfig {CpampUrl=cfg.CpampUrl,Port=FreePort(),QuotaSeconds=30,ProtectedAdminKey=cfg.ProtectedAdminKey,ProtectedBridgeKey=cfg.ProtectedBridgeKey};
+        await using(var automatic=new BridgeRuntime(automaticConfig))
+        {
+            await automatic.Start();for(int i=0;automatic.Inventory is null&&i<50;i++)await Task.Delay(50);
+            snapshotPercent=43;var deadline=DateTimeOffset.UtcNow.AddSeconds(34);
+            while(automatic.Inventory?.Accounts[0].Windows[0].UsedPercent!=43&&DateTimeOffset.UtcNow<deadline)await Task.Delay(200);
+            Check("background automatically observes updated CPAMP snapshot without manual refresh",automatic.Inventory?.Accounts[0].Windows[0].UsedPercent==43);
+        }
         try {await http.GetAsync("/health");Check("exit closes HTTP",false);}catch(HttpRequestException){Check("exit closes HTTP",true);}
     }
     static void CardTests()

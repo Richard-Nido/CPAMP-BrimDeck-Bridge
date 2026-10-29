@@ -35,6 +35,10 @@ public sealed record QuotaWindow(string Id, string Name, decimal? UsedPercent, d
 public sealed record QuotaAccount(string Id, string Name, string Provider, string Status, DateTimeOffset? UpdatedAt, List<QuotaWindow> Windows)
 {
     public bool QuotaSupported => Windows.Count > 0;
+    public string? RefreshError { get; init; }
+    [JsonIgnore] public string CredentialName { get; init; } = "";
+    [JsonIgnore] public string MemberEmail { get; init; } = "";
+    [JsonIgnore] public string WorkspaceId { get; init; } = "";
 }
 public sealed record QuotaSnapshot(DateTimeOffset UpdatedAt, List<QuotaAccount> Accounts)
 {
@@ -52,13 +56,14 @@ public sealed class AccountChoice
 }
 public sealed class BridgeConfig
 {
-    public string DataDirectory { get; set; } = @"D:\CPA\cpa-manager-plus_v1.14.9_windows_amd64\data";
+    public string DataDirectory { get; set; } = "";
     public string DatabaseFile { get; set; } = "";
     public string CpampUrl { get; set; } = "http://127.0.0.1:18317";
     public int Port { get; set; } = 18731;
     public int StatisticsSeconds { get; set; } = 60;
     public int QuotaSeconds { get; set; } = 120;
     public int StaleMinutes { get; set; } = 15;
+    public string QuotaSource { get; set; } = "cpamp";
     public string SevenDayMode { get; set; } = "calendar";
     public string TimezoneId { get; set; } = "";
     public string ProtectedAdminKey { get; set; } = "";
@@ -69,6 +74,7 @@ public sealed class BridgeConfig
         if (Port is < 1024 or > 65535 || StatisticsSeconds is < 15 or > 3600 || QuotaSeconds is < 30 or > 7200 || StaleMinutes is < 1 or > 1440)
             throw new InvalidDataException("端口或刷新间隔超出允许范围");
         if (SevenDayMode is not ("calendar" or "rolling")) throw new InvalidDataException("7 天模式无效");
+        if (QuotaSource is not ("cpamp" or "official")) throw new InvalidDataException("额度来源无效");
         if (TimezoneId.Length > 0) _ = TimeZoneInfo.FindSystemTimeZoneById(TimezoneId);
         var uri = new Uri(CpampUrl);
         if (uri.Scheme != "http" && uri.Scheme != "https" || !uri.IsLoopback || uri.UserInfo.Length > 0 || uri.Query.Length > 0 || uri.Fragment.Length > 0 || uri.AbsolutePath != "/")

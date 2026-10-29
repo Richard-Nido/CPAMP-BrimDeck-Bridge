@@ -1,2 +1,2 @@
-fed965087cdaa337aef59cbeb74ab25e496864dc52cf5268522505b93ebdb171  CPAMP-BrimDeck-Bridge.exe
-196e5fe56e96c9c606747163fd403098d7711cf95d8fe769d4f7120fdc6dd5d4  CPAMP-BrimDeck-Bridge-v1.1.0-win-x64.zip
+34cbd72ff51fd064f5686a3dacbffee5a2302668d94efb339491aff128ed3859  CPAMP-BrimDeck-Bridge.exe
+5a2300cb1c0fe37417fb2576f15f358a0ca3c18549af53532b1c806474558723  CPAMP-BrimDeck-Bridge-v1.2.0-win-x64.zip

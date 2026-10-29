@@ -1,43 +1,56 @@
 # CPAMP–BrimDeck Bridge
 
-一个独立的 Windows 11 x64 托盘小工具。只读 CPA-Manager-Plus（CPAMP）的已有统计和额度快照，通过 BrimDeck Custom JavaScript 显示结果。
+在 BrimDeck 中显示 CPA / CPA-Manager-Plus（CPAMP）的账号额度和用量统计。Windows 桥接程序与独立 Custom 脚本均可使用。
 
-支持今日 / 7 天 Token、费用、今日请求与成功率；从账号池选择少量账号，设置别名、额度窗口和顺序。默认不选中任何账号。
-
-v1.1.0 将账号列表改为双列额度卡片：直接显示剩余百分比、绿色进度条和重置倒计时；统计页改为指标卡片，展示 CPAMP 返回的数值。后台按刷新期限唤醒，窗口隐藏时停止界面定时刷新。
+v1.2.0 新增可选的 Codex 官方额度查询，以及无需常驻 Bridge 的 Custom 脚本。额度来源可在“连接设置”切换，旧配置默认继续使用 CPAMP 快照。额度和统计定时独立刷新，保存账号选择后立即读取。
 
 ![账号卡片预览（合成示例数据）](images/account-cards-preview.png)
 
-不修改 CPA、CPAMP、BrimDeck 的源码或配置，不写 CPAMP 数据库，不消费 CPA 用量队列，不启动上游巡检 / OAuth 刷新。
+## 不想常驻 Bridge：直接使用 Custom 脚本
 
-## 下载与启动
+从 [Releases](https://github.com/Richard-Nido/CPAMP-BrimDeck-Bridge/releases) 下载并解压，或打开仓库的 [scripts](.)。在 BrimDeck“设置 → 配额与统计 → 添加应用”选择 `Custom`，填写下表中对应的站点和密钥，并粘贴整个脚本。
 
-下载 [Releases](https://github.com/Richard-Nido/CPAMP-BrimDeck-Bridge/releases) 中的 Windows x64 包，解压到独立可写文件夹，双击 `CPAMP-BrimDeck-Bridge.exe`。无需安装 .NET、Python 或 Node。
+| 功能 | 脚本 | 站点 / 密钥 |
+|---|---|---|
+| 指定 Codex 账号官方额度 | [BrimDeck-CPA-Direct-Codex.js](BrimDeck-CPA-Direct-Codex.js) | CPA 本机地址 / CPA 管理密钥；也支持 CPAMP 地址 / CPAMP Admin Key 转发 |
+| 今日 / 7 天 Token、费用、请求成功率 | [BrimDeck-CPAMP-Direct-Statistics.js](BrimDeck-CPAMP-Direct-Statistics.js) | CPAMP 本机地址 / CPAMP Admin Key |
+| CPA 原生统计 | [BrimDeck-CPA-Direct-Statistics.js](BrimDeck-CPA-Direct-Statistics.js) | CPA 本机地址 / CPA 管理密钥；指标由 CPA 版本和实际接口决定 |
 
-1. 在“连接设置”填写 CPAMP 本机地址和 Admin Key，点击“保存并测试连接”。
-2. 在“账号管理”勾选要显示的账号、设置别名与窗口，点击“保存账号选择”。
-3. 在“BrimDeck 接入”复制地址、桥接密钥、额度脚本和统计脚本。
-4. 在 BrimDeck“设置 → 配额与统计 → 添加应用”创建两个 Custom 来源，分别粘贴脚本并“测试连接”。
+CPA 地址通常为 `http://127.0.0.1:8317`，CPAMP 通常为 `http://127.0.0.1:18317`。这些脚本都不使用 `18731` 桥接地址或桥接密钥。
 
-详见 [中文使用教程](使用教程.md)。仓库的 `dist/` 包含可直接运行的压缩单文件 EXE、脚本和教程；Release 另提供完整 ZIP 包。
+额度脚本顶部的 `QUOTA_SOURCE` 可选 `official`（官方）或 `cpamp`（CPAMP 已有快照，站点须填 CPAMP）。`ACCOUNT` 填指定凭证文件名；邮箱和 workspace 可补充精确限定。也可先运行 Bridge，在“BrimDeck 接入”选择账号并复制自动生成的直连脚本。每次刷新重新获取该账号的 `auth_index`，调用 CPA 的 `/v0/management/api-call`，由 CPA 用 `$TOKEN$` 替换对应账号凭证，请求 `https://chatgpt.com/backend-api/wham/usage`。脚本不下载凭证文件，也不需要粘贴 OAuth Token。
 
-## 指标含义与限制
+设置完成后可以彻底退出 Bridge。BrimDeck 按自己的刷新设置执行脚本；相关 CPA / CPAMP 数据服务仍须运行。Custom 数据显示为配额行，不能写入 BrimDeck 底部内置 Token / 费用统计区。
 
-- 今日从所选 Windows 时区午夜开始，查询区间左闭右开。7 天可选“含今天 7 个自然日”（默认、对应 CPAMP 请求监控）或“滚动 168 小时”（对应 CPAMP 用量分析）。
-- 统计与费用由 CPAMP 官方聚合 / 定价引擎提供，界面直接显示返回数值。金额以 decimal 读取，字段缺失时显示“—”或“不可用”；数据质量元信息保留在 API 中。
-- 额度来自已有快照，显示过期 / 更新时间；没有快照的账号显示未知，不主动查询上游。身份变化不按邮箱或列表位置自动接到另一个账号。
-- BrimDeck 每个应用列一个折叠环，取该来源最大百分比；最多 7 列。统计来源的环表示请求成功率。无百分比的纯文字行可能显示满环，应以行文字为准。此版本没有单独隐藏某个来源环的设置。
-- Custom 仅提供配额行。它不能向 BrimDeck 底部“统计应用”的内置 Token/费用区域写入数据。
+## 使用桥接程序
 
-## 兼容、开发与证据
+下载 Windows x64 包，双击 `CPAMP-BrimDeck-Bridge.exe`。无需安装 .NET、Python 或 Node。
 
-验证基线：CPAMP v1.14.9 (`6d962db680085827cd19a778d2ff05a3d1315672`)，BrimDeck 1.2.1 (`01e8bb7077245cc933b032c635409b283597faf2`)。
+1. 在“连接设置”填写 CPAMP 本机地址和 Admin Key，选择额度来源并“保存并测试连接”。
+2. 在“账号管理”勾选账号、窗口，设置别名与顺序，点“保存账号选择”。
+3. 使用“CPAMP 已有额度快照”时，只读取现有数据，不发起官方请求。
+4. 使用“CPA 代理查询官方额度”时，仅自动查询已勾选的 Codex 账号；通过 CPAMP 已配置的 CPA 连接转发。其他提供商仍读取 CPAMP 快照。默认每 120 秒刷新，可配置。
+5. 在“BrimDeck 接入”复制桥接地址、桥接密钥及原有额度 / 统计脚本。此方式需 Bridge 常驻。
 
+官方查询失败会保留上次成功的官方值并标过期、显示原因；不会静默改用另一来源。无数据时显示未知。账号禁用、删除或身份变化会明确提示。
+
+## 数据含义
+
+- 进度环表示已用比例，主文字表示剩余比例；不以重置时间推算虚假 0% 或 100%。5h、周、月窗口按官方实际时长区分，代码审查及附加额度单独展示。
+- CPAMP 模式合并持久化快照与 auth-files 运行时额度，按同账号、同窗口取最新观测；按额度字段的观测时间标记新旧，不把最近读取时间当作官方更新时间。
+- Bridge 统计默认按 Windows 时区；独立 CPAMP 统计脚本默认中国标准时间（UTC+8），7 天默认含今天 7 个自然日，可在脚本顶部改为滚动 168 小时。
+- CPAMP 金额直接取其定价引擎返回值；缺失字段显示不可用。CPA 原生统计的范围和完整性不能等同于 CPAMP 的历史统计。本机 CPA 8.0.47 不提供完整 `/usage`，脚本明确报告不支持；不降级为局部请求计数。
+- BrimDeck 每来源一个折叠环，取该来源最高百分比；最多 7 列。统计来源的百分比表示请求成功率。
+- 不消费 CPA 用量队列、不写 CPAMP 数据库、不发起付费模型推理。管理密钥仅保存在本机；发布包不含个人配置。
+
+## 开发与验证
+
+主程序使用 .NET 8 WinForms、Kestrel、HttpClient、Windows DPAPI 和 winsqlite3，没有第三方 NuGet 包。当前实测 CPAMP v1.14.10、CPA v8.0.47、BrimDeck 1.2.1；旧版验证记录保留在历史报告中。
+
+- [中文使用教程](使用教程.md)
 - [构建与维护](BUILD.md)
 - [实际测试报告](TEST_REPORT.md)
-- [源码调查](SOURCE_INSPECTION.md)
+- [源码与兼容调查](SOURCE_INSPECTION.md)
 - [第三方声明](THIRD_PARTY_NOTICES.md)
 
-主程序使用 .NET 8 WinForms、Kestrel、HttpClient、Windows DPAPI 和 Windows 自带 winsqlite3；没有第三方 NuGet 包。测试工具可选使用本机 BrimDeck 库，库不随本项目分发。
-
-MIT License。问题反馈请勿提交密钥、数据库、OAuth 凭证或带个人账号的截图。
+MIT License。反馈问题请勿提交密钥、数据库、OAuth 凭证或私人账号截图。

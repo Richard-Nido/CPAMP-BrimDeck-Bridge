@@ -1,0 +1,162 @@
+{
+  "passed": true,
+  "count": 39,
+  "results": [
+    {
+      "name": "direct quota two requests correct credential and used percentage",
+      "passed": true
+    },
+    {
+      "name": "direct resolves rotated auth_index every refresh",
+      "passed": true
+    },
+    {
+      "name": "direct monthly window classified by actual duration",
+      "passed": true
+    },
+    {
+      "name": "direct snapshot mode reads CPAMP without official call",
+      "passed": true
+    },
+    {
+      "name": "direct snapshot quota field timestamp preserves staleness",
+      "passed": true
+    },
+    {
+      "name": "direct snapshot empty data is unknown without fake ring",
+      "passed": true
+    },
+    {
+      "name": "direct snapshot cannot silently use CPA official if unsupported",
+      "passed": true
+    },
+    {
+      "name": "direct CPAMP merges newer runtime same-window telemetry",
+      "passed": true
+    },
+    {
+      "name": "direct CPAMP inactive lifecycle is not revived",
+      "passed": true
+    },
+    {
+      "name": "direct CPAMP keeps newer persisted quota over old runtime",
+      "passed": true
+    },
+    {
+      "name": "direct code-review and additional quota remain separate",
+      "passed": true
+    },
+    {
+      "name": "direct missing fails before official request",
+      "passed": true
+    },
+    {
+      "name": "direct ambiguous fails before official request",
+      "passed": true
+    },
+    {
+      "name": "direct disabled fails before official request",
+      "passed": true
+    },
+    {
+      "name": "direct workspace changed fails before official request",
+      "passed": true
+    },
+    {
+      "name": "direct missing auth index fails before official request",
+      "passed": true
+    },
+    {
+      "name": "official nested HTTP 401 rejects",
+      "passed": true
+    },
+    {
+      "name": "official nested HTTP 403 rejects",
+      "passed": true
+    },
+    {
+      "name": "official nested HTTP 429 rejects",
+      "passed": true
+    },
+    {
+      "name": "official nested HTTP 500 rejects",
+      "passed": true
+    },
+    {
+      "name": "outer API HTTP 401 rejects",
+      "passed": true
+    },
+    {
+      "name": "unknown official fields do not become zero",
+      "passed": true
+    },
+    {
+      "name": "invalid official percentage rejects",
+      "passed": true
+    },
+    {
+      "name": "timeout propagates to BrimDeck last-good cache",
+      "passed": true
+    },
+    {
+      "name": "local management key never sent to https://example.com",
+      "passed": true
+    },
+    {
+      "name": "local management key never sent to http://127.0.0.1:8317/path",
+      "passed": true
+    },
+    {
+      "name": "local management key never sent to http://localhost@evil.test",
+      "passed": true
+    },
+    {
+      "name": "local management key never sent to http://127.0.0.1:8317?key=x",
+      "passed": true
+    },
+    {
+      "name": "CPAMP two parallel read-only analytics queries retain eight metrics",
+      "passed": true
+    },
+    {
+      "name": "CPAMP missing cost is unavailable and zero requests is N/A",
+      "passed": true
+    },
+    {
+      "name": "CPAMP missing fields fail",
+      "passed": true
+    },
+    {
+      "name": "CPA missing full statistics reports unsupported without fallback calls",
+      "passed": true
+    },
+    {
+      "name": "CPA native flat response is read-only",
+      "passed": true
+    },
+    {
+      "name": "CPA native legacy envelope is read-only",
+      "passed": true
+    },
+    {
+      "name": "CPA invalid classification fails",
+      "passed": true
+    },
+    {
+      "name": "statistics HTTP 401 rejects",
+      "passed": true
+    },
+    {
+      "name": "statistics HTTP 500 rejects",
+      "passed": true
+    },
+    {
+      "name": "statistics HTTP 401 rejects",
+      "passed": true
+    },
+    {
+      "name": "statistics HTTP 500 rejects",
+      "passed": true
+    }
+  ]
+}

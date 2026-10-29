@@ -49,7 +49,7 @@ static class Program
             fake.Body="{\"status\":\"ok\",\"accounts\":[]}";read=await providers.TestAsync(Entry(quotaScript));Check("installed empty selection nonempty text",read.Snapshot.LiveQuota&&read.Snapshot.Metrics.Count==1&&read.Snapshot.Metrics[0].UsedPercent is null);
             fake.Body=JsonSerializer.Serialize(q,Bridge.Json.Options);read=await providers.TestAsync(Entry(Scripts.Account(new string('a',64))));Check("installed generated independent script",read.Snapshot.LiveQuota&&read.Snapshot.Metrics[0].UsedPercent==35);
             Check("installed native maximum application columns seven",AppPresets.MaximumApps==7);
-            await Live(root,args[1]);
+            if(args.Length>1) await Live(root,args[1]);
         }
         catch(Exception ex){Check("unhandled "+ex.GetType().Name+" "+ex.Message,false);Console.WriteLine(ex.StackTrace);}
         await File.WriteAllTextAsync(Path.Combine(root,"tests/output/brimdeck-contract.json"),JsonSerializer.Serialize(new{passed=failures==0,count=results.Count,failures,results},Bridge.Json.Options));

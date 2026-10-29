@@ -16,5 +16,5 @@ New-Item -ItemType Directory -Force dist/images | Out-Null
 Copy-Item docs/images/account-cards-preview.png dist/images -Force
 Copy-Item docs/SOURCE_INSPECTION.md dist/SOURCE_INSPECTION.md -Force
 $readme=Get-Content README.md -Raw
-$readme.Replace('docs/images/','images/').Replace('docs/SOURCE_INSPECTION.md','SOURCE_INSPECTION.md').TrimEnd()+"`n" | Set-Content dist/README.md -Encoding utf8 -NoNewline
+$readme.Replace('docs/images/','images/').Replace('docs/SOURCE_INSPECTION.md','SOURCE_INSPECTION.md').Replace('(scripts/','(').Replace('](scripts)','](.)').TrimEnd()+"`n" | Set-Content dist/README.md -Encoding utf8 -NoNewline
 Write-Output 'Published: dist/CPAMP-BrimDeck-Bridge.exe'

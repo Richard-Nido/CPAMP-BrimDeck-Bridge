@@ -21,6 +21,7 @@ public sealed class ReadOnlyDb : IDisposable
         if (path.Length > 0 && !Path.IsPathRooted(path)) path = Path.Combine(config.DataDirectory, path);
         if (path.Length == 0)
         {
+            if (config.DataDirectory.Length == 0 || !Directory.Exists(config.DataDirectory)) throw new IOException("CPAMP 数据目录未配置或已移动，请在连接设置更新；有 Admin Key 时统计使用 API");
             var found = Directory.EnumerateFiles(config.DataDirectory).Where(p => Path.GetExtension(p).ToLowerInvariant() is ".sqlite" or ".db" or ".sqlite3").ToArray();
             if (found.Length != 1) throw new IOException("数据目录中数据库数量不是 1，请在连接设置指定数据库文件");
             path = found[0];

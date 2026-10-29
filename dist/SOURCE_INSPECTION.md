@@ -47,3 +47,33 @@
 ## v1.1.0 展示更新
 
 2026-10-28 用户确认仅改变展示样式，保留现有指标，不增加模板中的历史用量或最近状态采集。卡片式布局仅在 Bridge 原生窗口实现；BrimDeck 仍使用上述 Custom 文本行契约。统计页面移除价格完整性说明，直接显示读取金额；API 仍保留 CostStatus / CostComplete。快照来源、字段含义和只读接口未变。验证结果见当前 TEST_REPORT.md，旧报告在 docs/history 中。
+
+## v1.2.0 当前环境与刷新调查（2026-10-29）
+
+本机运行 CPAMP v1.14.10、CPA v8.0.47、BrimDeck 1.2.1。旧 Bridge 配置仍指向已不存在的 v1.14.9 数据目录；API 统计正常时不受该路径影响，SQLite 降级需要手动更新实际目录。新配置不再硬编码私人版本路径。
+
+### 快照与运行时额度是两条现有数据路径
+
+- `POST /v0/management/quota-snapshots/query` 返回 CPAMP 持久化额度快照与生命周期。
+- `GET /v0/management/auth-files` 的 `quota.observed_at / quota.signals` 返回 CPA 运行时保存的额度观测。已实测同账号运行时观测比持久化快照更新，两个接口数值可能暂时不同。
+- 当前快照额度时间应读 `field_sources.quota.observed_at_ms`，不能只查旧的 `used_percent / remaining_percent` 字段来源。窗口结束优先当前生命周期 `current_cycle.scheduled_end_ms`，兼容 `cycle_end_ms`。
+- 修复保留字段观测时间与最后读取时间的区别；未知数据不推算成百分比。经用户确认，Bridge及独立脚本都合并同账号、同窗口的持久化快照与运行时额度，只用较新有效观测替换；保留停用生命周期边界。查询 include_inactive=true 仅为防止旧运行时数据复活已停用窗口，展示时排除inactive。
+
+### Codex 官方读取
+
+- CPAMP `apps/web/src/utils/quota/constants.ts` 定义官方 GET `https://chatgpt.com/backend-api/wham/usage`。
+- `providerRequests.ts:fetchCodexQuotaSummary` 与 `codexRequestHeaders.ts`：取 auth_index、GET 方法、`Authorization: Bearer $TOKEN$`，有明确 workspace 时带 `Chatgpt-Account-Id`。
+- CPA `internal/api/handlers/management/api_tools.go:APICall` 接受 authIndex/auth_index，服务端按指定凭证替换 `$TOKEN$`，返回 `status_code/header/body`。外层200不表示上游成功。
+- 官方额度读取已分别经 CPAMP 代理和直接 CPA 地址实测200，不访问额度重置券 consume、不请求推理接口。
+- 独立脚本通过 BrimDeck pick 仅保留所需账号元信息，2秒账号列表与6.5秒额度请求适配10秒脚本总时限。每来源一个账号，避免多账号串行请求耗尽时间预算。
+
+### CPA 原生统计
+
+- 当前本机 `GET :8317/v0/management/usage` 实测404。CPAMP `:18317/v0/management/usage` 是自己的聚合接口，不能当作CPA直连成功。
+- CPA v8 `api_key_usage.go:GetAPIKeyUsage` 提供 API-key 凭证的成功/失败计数，不提供Token/费用。
+- `auth-files` 中 success/failed 是凭证的运行时计数，生命周期与CPAMP持久化统计不同。
+- 独立 CPAMP 完整统计直接使用其只读 analytics API，保留今日、7天和费用。未写数据库或消费 CPA 用量队列。
+
+参考源码固定为 CPAMP v1.14.10；CPA v8 API读取以本机8.0.47实际响应验证为准，公开main源码仅辅助解释接口语义。BrimDeck契约仍沿用上文固定提交。
+
+CPA完整统计接口缺失时按用户决策明确报告不支持，不读取API-key局部计数替代完整统计。

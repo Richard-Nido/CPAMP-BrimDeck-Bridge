@@ -23,7 +23,9 @@ jobs:
         shell: pwsh
         run: dotnet run --project tests/Bridge.Tests/Bridge.Tests.csproj -- "$PWD" (Get-Command python).Source
       - name: JavaScript contracts
-        run: node tests/scripts.test.mjs
+        run: |
+          node tests/scripts.test.mjs
+          node tests/direct-scripts.test.mjs
       - name: Publish self-contained executable
         shell: pwsh
         run: ./build.ps1

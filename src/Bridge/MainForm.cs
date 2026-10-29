@@ -19,6 +19,12 @@ public static class Scripts
         if (id.Length != 64 || id.Any(c => !Uri.IsHexDigit(c))) throw new InvalidDataException("安全账号标识无效");
         return Read("BrimDeck-CPA-Account.template.js").Replace("__ACCOUNT_ID__", id);
     }
+    public static string DirectAccount(string name, string email = "", string workspace = "", bool snapshots = false)
+    {
+        if (string.IsNullOrWhiteSpace(name)) throw new InvalidDataException("账号凭证文件名缺失");
+        var script = Read("BrimDeck-CPA-Direct-Codex.js").Replace("/*ACCOUNT*/{ name: \"请填写凭证文件名.json\", email: \"\", workspace: \"\" }", "/*ACCOUNT*/" + JsonSerializer.Serialize(new { name, email, workspace }));
+        return snapshots ? script.Replace("const QUOTA_SOURCE = \"official\";", "const QUOTA_SOURCE = \"cpamp\";") : script;
+    }
 }
 public sealed class AccountEditor
 {
@@ -31,6 +37,10 @@ public sealed class AccountEditor
     public string Preview { get; set; } = "";
     public string Status { get; set; } = "";
     public string Updated { get; set; } = "";
+    public string CredentialName { get; set; } = "";
+    public string MemberEmail { get; set; } = "";
+    public string WorkspaceId { get; set; } = "";
+    public string? RefreshError { get; set; }
     public List<string> WindowIds { get; set; } = [];
     public List<QuotaWindow> Windows { get; set; } = [];
 }
@@ -52,6 +62,7 @@ public sealed class MainForm : Form
     private readonly TextBox dataDir = new(), database = new(), cpamp = new(), adminKey = new() { UseSystemPasswordChar = true };
     private readonly NumericUpDown port = new() { Minimum = 1024, Maximum = 65535 }, statsSeconds = new() { Minimum = 15, Maximum = 3600 }, quotaSeconds = new() { Minimum = 30, Maximum = 7200 }, staleMinutes = new() { Minimum = 1, Maximum = 1440 };
     private readonly ComboBox mode = new() { DropDownStyle = ComboBoxStyle.DropDownList }, timezone = new() { DropDownStyle = ComboBoxStyle.DropDownList };
+    private readonly ComboBox quotaSource = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly CheckBox startup = new() { Text = "登录 Windows 时启动到托盘", AutoSize = true };
     private readonly ComboBox accountScripts = new() { Width = 380, DropDownStyle = ComboBoxStyle.DropDownList, DisplayMember = "Name", ValueMember = "Id" };
     private readonly Label bridgeAddress = new() { AutoSize = true };
@@ -156,7 +167,7 @@ public sealed class MainForm : Form
         foreach (var card in cards.Values) if (card.Width != cardWidth) card.Width = cardWidth;
         cardsPanel.ResumeLayout();
     }
-    private void UpdateAccountHint() => accountHint.Text = $"已选择 {editors.Values.Count(a => a.Selected)} 个账号{(dirty ? " · 有未保存更改" : "")}";
+    private void UpdateAccountHint() => accountHint.Text = $"已选择 {editors.Values.Count(a => a.Selected)} 个账号 · {(runtime.Config.QuotaSource == "official" ? "官方额度（仅勾选 Codex）" : "CPAMP 快照")} · 每 {runtime.Config.QuotaSeconds} 秒刷新{(dirty ? " · 有未保存更改" : "")}";
     private BridgeConfig Clone() => JsonSerializer.Deserialize<BridgeConfig>(JsonSerializer.Serialize(runtime.Config, Json.Options), Json.Options)!;
     private async Task SaveChoices()
     {
@@ -164,7 +175,7 @@ public sealed class MainForm : Form
         {
             var config = Clone();
             config.Accounts = editors.Values.Select(a => new AccountChoice { Id = a.Id, Selected = a.Selected, Alias = a.Alias.Trim(), Order = a.Order, Windows = [.. a.WindowIds] }).ToList();
-            store.Save(config); await runtime.UpdateConfig(config); dirty = false; UpdateAccountHint(); FilterAccounts(); UpdateAccountScriptChoices(); RenderState();
+            store.Save(config); await runtime.UpdateConfig(config); dirty = false; UpdateAccountHint(); FilterAccounts(); UpdateAccountScriptChoices(); await RefreshNow();
             MessageBox.Show(this, "账号、别名、窗口和顺序已保存。", Text);
         }
         catch (Exception) { MessageBox.Show(this, "保存失败，请检查别名长度和显示顺序。", Text); }
@@ -178,9 +189,10 @@ public sealed class MainForm : Form
         dataDir.Text = config.DataDirectory; database.Text = config.DatabaseFile; cpamp.Text = config.CpampUrl; port.Value = config.Port; statsSeconds.Value = config.StatisticsSeconds; quotaSeconds.Value = config.QuotaSeconds; staleMinutes.Value = config.StaleMinutes;
         adminKey.PlaceholderText = config.ProtectedAdminKey.Length > 0 ? "已加密保存；留空保持原密钥" : "填写 CPAMP Admin Key；留空仅 SQLite 统计，无费用/账号发现";
         mode.Items.AddRange(["含今天的7个自然日（CPAMP请求监控）", "滚动168小时（CPAMP用量分析）"]); mode.SelectedIndex = config.SevenDayMode == "rolling" ? 1 : 0;
+        quotaSource.Items.AddRange(["CPAMP 已有额度快照", "CPA 代理查询官方额度（仅勾选的 Codex）"]); quotaSource.SelectedIndex = config.QuotaSource == "official" ? 1 : 0;
         timezone.Items.Add("跟随 Windows 本地时区"); foreach (var zone in TimeZoneInfo.GetSystemTimeZones()) timezone.Items.Add(zone.Id);
         timezone.SelectedItem = config.TimezoneId.Length == 0 ? "跟随 Windows 本地时区" : config.TimezoneId;
-        Field("CPAMP 数据目录", dataDir); Field("数据库文件（空白自动识别）", database); Field("CPAMP 本机服务地址", cpamp); Field("CPAMP Admin Key", adminKey); Field("桥接端口", port); Field("统计刷新间隔（秒）", statsSeconds); Field("额度快照读取间隔（秒）", quotaSeconds); Field("快照过期阈值（分钟）", staleMinutes); Field("7天统计模式", mode); Field("统计时区", timezone);
+        Field("CPAMP 数据目录（SQLite 降级）", dataDir); Field("数据库文件（空白自动识别）", database); Field("CPAMP 本机服务地址", cpamp); Field("CPAMP Admin Key", adminKey); Field("桥接端口", port); Field("统计刷新间隔（秒）", statsSeconds); Field("额度来源", quotaSource); Field("额度刷新间隔（秒）", quotaSeconds); Field("快照过期阈值（分钟）", staleMinutes); Field("7天统计模式", mode); Field("统计时区", timezone);
         using (var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run")) startup.Checked = key?.GetValue("CPAMPBrimDeckBridge") is string;
         Field("开机启动（当前用户）", startup);
         var actions = Flow(); actions.Controls.Add(Button("保存并测试连接", async (_, _) => await SaveSettings()));
@@ -192,7 +204,7 @@ public sealed class MainForm : Form
         if (saving) return; saving = true;
         try
         {
-            var c = Clone(); c.DataDirectory = dataDir.Text.Trim(); c.DatabaseFile = database.Text.Trim(); c.CpampUrl = cpamp.Text.Trim().TrimEnd('/'); c.Port = (int)port.Value; c.StatisticsSeconds = (int)statsSeconds.Value; c.QuotaSeconds = (int)quotaSeconds.Value; c.StaleMinutes = (int)staleMinutes.Value;
+            var c = Clone(); c.DataDirectory = dataDir.Text.Trim(); c.DatabaseFile = database.Text.Trim(); c.CpampUrl = cpamp.Text.Trim().TrimEnd('/'); c.Port = (int)port.Value; c.StatisticsSeconds = (int)statsSeconds.Value; c.QuotaSeconds = (int)quotaSeconds.Value; c.StaleMinutes = (int)staleMinutes.Value; c.QuotaSource = quotaSource.SelectedIndex == 1 ? "official" : "cpamp";
             c.SevenDayMode = mode.SelectedIndex == 1 ? "rolling" : "calendar"; c.TimezoneId = timezone.SelectedIndex == 0 ? "" : timezone.SelectedItem?.ToString() ?? "";
             if (adminKey.Text.Trim().Length > 0) c.ProtectedAdminKey = SecretStore.Protect(adminKey.Text.Trim());
             store.Save(c); await runtime.UpdateConfig(c); adminKey.Clear(); adminKey.PlaceholderText = c.ProtectedAdminKey.Length > 0 ? "已加密保存；留空保持原密钥" : "填写 CPAMP Admin Key";
@@ -213,6 +225,19 @@ public sealed class MainForm : Form
         stack.Controls.Add(Button("复制统计 Custom 脚本", (_, _) => Copy(Scripts.Read("BrimDeck-CPA-Statistics.js"))));
         stack.Controls.Add(new Label { Text = "独立账号来源：先在账号管理中保存选择，再选择账号生成脚本。", AutoSize = true, Padding = new Padding(8) });
         stack.Controls.Add(accountScripts); stack.Controls.Add(Button("复制单账号脚本", (_, _) => { if (accountScripts.SelectedValue is string id) Copy(Scripts.Account(id)); else MessageBox.Show(this, "请先选择一个已保存的账号", Text); }));
+        stack.Controls.Add(Button("复制所选账号直连官方额度脚本（无需 Bridge）", (_, _) =>
+        {
+            if (accountScripts.SelectedValue is string id && editors.TryGetValue(id, out var editor) && editor.Provider == "codex" && editor.CredentialName.Length > 0) Copy(Scripts.DirectAccount(editor.CredentialName, editor.MemberEmail, editor.WorkspaceId));
+            else MessageBox.Show(this, "请选择一个已有凭证文件的 Codex 账号", Text);
+        }));
+        stack.Controls.Add(Button("复制所选账号 CPAMP 快照脚本（无需 Bridge）", (_, _) =>
+        {
+            if (accountScripts.SelectedValue is string id && editors.TryGetValue(id, out var editor) && editor.Provider == "codex" && editor.CredentialName.Length > 0) Copy(Scripts.DirectAccount(editor.CredentialName, editor.MemberEmail, editor.WorkspaceId, true));
+            else MessageBox.Show(this, "请选择一个已有凭证文件的 Codex 账号", Text);
+        }));
+        stack.Controls.Add(Button("复制 CPAMP 直连统计脚本（无需 Bridge）", (_, _) => Copy(Scripts.Read("BrimDeck-CPAMP-Direct-Statistics.js"))));
+        stack.Controls.Add(Button("复制 CPA 原生统计脚本（无需 Bridge / CPAMP）", (_, _) => Copy(Scripts.Read("BrimDeck-CPA-Direct-Statistics.js"))));
+        stack.Controls.Add(new Label { Text = "直连脚本：站点与密钥填写 CPA 地址 + CPA 管理密钥，或 CPAMP 地址 + CPAMP Admin Key。\nCPAMP 完整统计仅使用 CPAMP 地址及其 Admin Key。配置完成后可退出 Bridge；CPA / CPAMP 数据服务仍需运行。", AutoSize = true, MaximumSize = new Size(980, 0), Padding = new Padding(8) });
         stack.Controls.Add(Button("测试本机桥接 API", async (_, _) =>
         {
             try { using var http = new HttpClient(new HttpClientHandler { UseProxy = false }) { Timeout = TimeSpan.FromSeconds(5) }; http.DefaultRequestHeaders.Authorization = new("Bearer", SecretStore.Read(runtime.Config.ProtectedBridgeKey)); using var r = await http.GetAsync($"http://127.0.0.1:{runtime.Config.Port}/health"); MessageBox.Show(this, r.IsSuccessStatusCode ? await r.Content.ReadAsStringAsync() : "测试失败 HTTP " + (int)r.StatusCode, Text); }
@@ -226,7 +251,9 @@ public sealed class MainForm : Form
     private void UpdateAccountScriptChoices()
     {
         var selected = runtime.Config.Accounts.Where(a => a.Selected).OrderBy(a => a.Order).Select(a => new { a.Id, Name = Json.First(a.Alias, editors.GetValueOrDefault(a.Id)?.Name ?? "账号") }).ToList();
+        string? previous = accountScripts.SelectedValue as string;
         accountScripts.DataSource = selected;
+        if (previous is not null && selected.Any(a => a.Id == previous)) accountScripts.SelectedValue = previous;
     }
     private void RuntimeChanged(object? sender, EventArgs e)
     {
@@ -261,9 +288,10 @@ public sealed class MainForm : Form
                 if (!editors.TryGetValue(a.Id, out var editor))
                 {
                     var choice = runtime.Config.Accounts.FirstOrDefault(c => c.Id == a.Id);
-                    editor = new AccountEditor { Id = a.Id, Selected = choice?.Selected ?? false, Alias = choice?.Alias ?? "", Order = choice?.Order ?? editors.Count, WindowIds = choice?.Windows.ToList() ?? a.Windows.Where(w => w.Name.StartsWith("5h") || w.Name.StartsWith("Week")).Select(w => w.Id).ToList() }; editors[a.Id] = editor;
+                    editor = new AccountEditor { Id = a.Id, Selected = choice?.Selected ?? false, Alias = choice?.Alias ?? "", Order = choice?.Order ?? editors.Count, WindowIds = choice?.Windows.ToList() ?? a.Windows.Where(w => w.Name.StartsWith("5h") || w.Name.StartsWith("Week") || w.Name.StartsWith("Month")).Select(w => w.Id).ToList() }; editors[a.Id] = editor;
                 }
-                editor.Name = a.Name; editor.Provider = a.Provider; editor.Status = a.Status; editor.Updated = a.UpdatedAt?.LocalDateTime.ToString("MM-dd HH:mm") ?? "—"; editor.Windows = a.Windows;
+                editor.Name = a.Name; editor.Provider = a.Provider; editor.Status = a.Status; editor.Updated = a.UpdatedAt?.LocalDateTime.ToString("MM-dd HH:mm:ss") ?? "—"; editor.Windows = a.Windows; editor.CredentialName = a.CredentialName; editor.RefreshError = a.RefreshError;
+                editor.MemberEmail = a.MemberEmail; editor.WorkspaceId = a.WorkspaceId;
             }
             foreach (var choice in runtime.Config.Accounts.Where(c => c.Selected && !editors.ContainsKey(c.Id))) editors[choice.Id] = new AccountEditor { Id = choice.Id, Selected = true, Name = "已移除或身份已变化", Alias = choice.Alias, Order = choice.Order, WindowIds = [..choice.Windows], Status = "需重新选择", Provider = "unknown" };
             var present = q.Accounts.Select(a => a.Id).ToHashSet();

@@ -1,57 +1,43 @@
-# v1.1.0 实际测试报告
+# v1.2.0 实际测试报告
 
-验证日期：2026-10-28，Windows 11 x64；CPAMP v1.14.9；BrimDeck 1.2.1。
+验证日期：2026-10-29；Windows 11 x64、CPAMP v1.14.10、CPA v8.0.47、BrimDeck 1.2.1。
 
-## 更新范围
+## 结果
 
-- 账号页采用双列卡片，沿用现有账号选择、别名、顺序和窗口；主数值与绿色条表示剩余额度，下方显示已用量和重置倒计时。
-- 首页改为 8 张统计指标卡；统计脚本显示“今日费用 / 7天费用”及实际数值，不显示“完整性未确认”等文案。原 API 金额、质量元信息、错误和过期状态保留。
-- Custom 行使用简短窗口名称和倒计时，percent 仍表示已使用比例。
-- 不添加模板中的历史账号统计、最近状态条等新数据。开关只控制桥接展示，不修改上游凭证。
-
-## 自动验证
+共 **199 项自动检查通过**，正式源码可构建为自包含 Windows x64 EXE。测试结果如下：
 
 | 范围 | 结果 | 证据 |
 |---|---|---|
-| 核心 / SQLite / HTTP / 卡片交互 | PASS，75 项 | docs/evidence/v1.1.0/core-tests.json |
-| 三份 JavaScript 契约 | PASS，32 项 | docs/evidence/v1.1.0/script-tests.json |
-| 原版 BrimDeck 引擎与真实数据链路 | PASS，18 项 | docs/evidence/v1.1.0/brimdeck-contract.json |
-| 今日和7天官方 API 对账 | PASS | 完整数值保存在本机 verification-local，不发布 |
-| 运行窗口渲染 | PASS，运行首页与账号卡片实际检查 | docs/images/account-cards-preview.png 是合成数据布局证据 |
+| 核心 / SQLite / HTTP / 调度 / 窗口选择 | PASS，98 项 | docs/evidence/v1.2.0/core-tests.json |
+| 原桥接 JavaScript | PASS，32 项 | docs/evidence/v1.2.0/script-tests.json |
+| 独立 Custom 脚本 | PASS，39 项 | docs/evidence/v1.2.0/direct-script-tests.json |
+| 原 BrimDeck 引擎 / 正式EXE链路 | PASS，18 项 | docs/evidence/v1.2.0/brimdeck-contract.json |
+| 独立脚本 BrimDeck 引擎 / 真实接口 | PASS，12 项 | docs/evidence/v1.2.0/direct-brimdeck-contract.json |
 
-合计 **125 项自动检查通过**。新增验证覆盖按期限调度、非每秒轮询、有效快照对象复用、紧凑 HTTP JSON、认证密钥轮换、卡片编辑、刷新保留未保存内容和指标宽度。
+## 刷新问题与修复
 
-账号、别名、顺序、窗口配置结构沿用 v1.0.0。既有的无请求 N/A、未知额度、只读 SQLite、活动 WAL、临时排他锁恢复、归档缺失、凭证身份变化、401 / 500 / 断线与缓存测试继续通过。
+本机实测同账号 auth-files.quota 的运行时额度比 quota-snapshots/query 持久化快照更新。旧 Bridge 只查询后者，因而可能继续展示旧额度和过期重置时间。旧代码还未读取当前 field_sources.quota 的额度观测时间。
 
-## BrimDeck 与真实 CPAMP
+经用户确认，CPAMP模式合并两条已有数据路径，以同账号、同窗口的有效额度观测时间决定取值；不会请求官方接口。读取包含inactive状态用于阻止旧运行时信息复活已停用窗口，展示时排除已停用窗口。兼容旧all和新codex_main主额度选择，附加模型窗口不并入主额度。
 
-正式自包含 EXE 从真实 CPAMP 读取统计和快照；临时测试配置选中两个有 5h/weekly 的 Codex 账号。已安装 BrimDeck 原版 ConfiguredProviders.TestAsync、Jint、MetricParser 执行更新后的三份脚本，核对额度百分比、8行统计、独立账号来源、失败缓存和恢复行为。
+自动刷新回归使用实际30秒调度周期：模拟服务从35%更新到43%，未调用手动刷新，后台自动观察到新值。另有新运行时观测替换旧持久化值、旧运行时不覆盖新快照、缺失时间、过期与停用生命周期测试。
 
-由于测试用 .NET 10 SDK 下载中断，本次原引擎测试使用本机 PowerShell 的 .NET 10 运行时编译并运行同一份 C# 测试源，引用同一安装中的 BrimDeck.Core/Jint/Acornima；没有改动 BrimDeck。仓库仍提供 .NET 10 SDK 测试项目供复现。
+官方模式通过现有CPAMP管理代理让CPA查询官方wham/usage，仅请求已勾选Codex账号；401/429、超时与字段错误不会变成0%或100%。429测试保留最近官方值并标过期，health报告partial。切换来源后保留已保存窗口勾选。
 
-统计对账调用 analytics 与 dashboard/summary，使用完全相同的 today/week 起止时间。今日和7天 Token / 费用、今日请求、成功与失败均一致。公开材料不含真实账号、实际支出、密钥或完整数值对账。
+## 无需常驻 Bridge 的实测
 
-## 后台占用
+- 在本机已安装 BrimDeck 的真实 ConfiguredProviders / Jint / MetricParser 中运行正式独立脚本。
+- CPA地址直连额度：只使用CPA管理API，动态读取auth_index，再由CPA请求官方接口；没有经过Bridge或CPAMP代理。
+- CPAMP地址直连额度：只读取既有快照和运行时观测，合并后显示，不请求官方。
+- CPAMP地址直连完整统计：8行指标成功，固定相同起止时间与官方dashboard统计对账一致。
+- CPA v8.0.47的完整/usage接口实测404。按用户决策，正式脚本明确报告不支持，不调用局部计数接口作为降级。兼容旧版/usage响应的分支使用模拟真实契约验证；不宣称本机CPA支持完整原生统计。
 
-- 调度器等待下一次统计 / 额度期限或设置变更，不再每秒唤醒检查。
-- GUI 改为数据变化时更新；可见时每分钟更新倒计时，隐藏到托盘后停止 UI 定时器。
-- 同一连接设置复用 HttpClient 和连接池；保存连接设置时才更换。
-- 桥接 Bearer 认证在服务启动时解密一次，停止时清空，密钥轮换测试通过。
-- 有效快照不重复深复制；HTTP JSON 不缩进，减少临时分配和传输体积。
+BrimDeck默认脚本时限10秒；额度来源单账号两次本机请求（2秒列表、6.5秒数据），CPAMP统计两次并行查询。不同账号创建不同Custom来源。错误由BrimDeck原生最近成功缓存处理；无百分比的文字行不填虚假环值。
 
-同机、真实 CPAMP、仅本机 HTTP 服务模式，预热10秒后空闲25秒：
+## 发布与界面检查
 
-| 版本 | 累计CPU时间 | 单核CPU占比 | 工作集 | 私有内存 |
-|---|---:|---:|---:|---:|
-| v1.0.0 | 46.875 ms | 0.1873% | 138.39 MiB | 64.21 MiB |
-| v1.1.0 | 15.625 ms | 0.0624% | 137.38 MiB | 63.47 MiB |
+新版源码、嵌入脚本和独立脚本一起发布。使用程序内DrawToBitmap检查设置页与接入页布局，新增来源选择与复制按钮有对应控件；该检查不等同于真实桌面截图或用户手工点击验收。真实账号界面图只留本机临时目录，不发布。
 
-证据见 idle-comparison.json，可通过 tests/measure-idle.ps1 重跑。这是短时单机测量，两个版本的绝对空闲CPU都很低；不据此承诺所有机器上的固定下降比例。指标不包含打开账号页时的 GUI 工作集。
+仍为NOT TESTED：在真实BrimDeck设置页手工粘贴并保存来源、重启Windows验证开机启动。测试没有修改BrimDeck设置、CPAMP配置/数据库或消费CPA用量队列；测试用秘密只在隔离DPAPI状态中处理。
 
-## 保留的边界
-
-BrimDeck 原生每来源一个环、最多7列、percent表示已用的规则不变。Custom 不支持修改卡片布局，模板风格应用在桥接程序中。无额度时保留真实未知状态；过期时保留时间标记。
-
-未操作真实 BrimDeck 设置页面粘贴脚本，未重启 Windows 验证开机启动。两项仍为 NOT TESTED。用户模板图片、真实 GUI 截图、state、verification-local、临时 SDK / 下载均排除在 Git / 发布包外。
-
-v1.0.0 的历史报告见 docs/history/TEST_REPORT-v1.0.0.md。
+历史测试报告保留在docs/history/TEST_REPORT-v1.1.0.md。
